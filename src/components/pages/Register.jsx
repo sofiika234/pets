@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { authApi } from '../../utils/api';
 
 function Register() {
   const [formData, setFormData] = useState({
@@ -7,32 +8,38 @@ function Register() {
     phone: '',
     email: '',
     password: '',
-    confirmPassword: '',
-    agree: false
+    password_confirmation: '',
+    confirm: 0
   });
   
   const [errors, setErrors] = useState({});
   const [message, setMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
   const validateField = (name, value) => {
     switch(name) {
       case 'name':
+        if (!value.trim()) return 'Обязательное поле';
         return /^[А-Яа-яёЁ\s\-]+$/.test(value) ? '' : 'Только кириллица, пробелы и дефисы';
       case 'phone':
+        if (!value.trim()) return 'Обязательное поле';
         return /^[\+\d]+$/.test(value) ? '' : 'Только цифры и знак +';
       case 'email':
-        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? '' : 'Пожалуйста, введите корректный email';
+        if (!value.trim()) return 'Обязательное поле';
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? '' : 'Неверный формат email';
       case 'password':
+        if (!value) return 'Обязательное поле';
         if (value.length < 7) return 'Минимум 7 символов';
         if (!/\d/.test(value)) return 'Должна быть хотя бы одна цифра';
         if (!/[a-z]/.test(value)) return 'Должна быть хотя бы одна строчная буква';
         if (!/[A-Z]/.test(value)) return 'Должна быть хотя бы одна заглавная буква';
         return '';
-      case 'confirmPassword':
+      case 'password_confirmation':
+        if (!value) return 'Обязательное поле';
         return value === formData.password ? '' : 'Пароли не совпадают';
-      case 'agree':
-        return value ? '' : 'Необходимо согласие';
+      case 'confirm':
+        return value === 1 ? '' : 'Необходимо согласие';
       default:
         return '';
     }
@@ -40,14 +47,13 @@ function Register() {
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    const fieldValue = type === 'checkbox' ? checked : value;
+    const fieldValue = type === 'checkbox' ? (checked ? 1 : 0) : value;
     
     setFormData(prev => ({
       ...prev,
       [name]: fieldValue
     }));
 
-    // Валидация в реальном времени
     const error = validateField(name, fieldValue);
     setErrors(prev => ({
       ...prev,
@@ -55,54 +61,79 @@ function Register() {
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // Проверка всех полей
+    setIsLoading(true);
+    setMessage('');
+
+    // Проверяем все поля
     const newErrors = {};
-    Object.keys(formData).forEach(key => {
-      const error = validateField(key, formData[key]);
-      if (error) newErrors[key] = error;
+    Object.keys(formData).forEach(field => {
+      const error = validateField(field, formData[field]);
+      if (error) newErrors[field] = error;
     });
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
+      setIsLoading(false);
       return;
     }
 
-    // Сохранение пользователя
-    const user = {
-      id: Date.now(),
-      name: formData.name,
-      email: formData.email,
-      phone: formData.phone,
-      password: formData.password, // В реальном приложении нужно хэшировать
-      registrationDate: new Date().toISOString().split('T')[0]
-    };
+    try {
+      await authApi.register(formData);
+      
+      setMessage('Регистрация успешна! Теперь вы можете войти.');
+      
+      // Автоматически входим после регистрации
+      setTimeout(async () => {
+        try {
+          const loginData = {
+            email: formData.email,
+            password: formData.password
+          };
+          
+          const loginResponse = await authApi.login(loginData);
+          if (loginResponse.data?.token) {
+            const userResponse = await authApi.getUser('me');
+            localStorage.setItem('currentUser', JSON.stringify(userResponse.data.user));
+            navigate('/profile');
+          }
+        } catch (loginError) {
+          navigate('/login');
+        }
+      }, 2000);
 
-    // Сохраняем в localStorage
-    const users = JSON.parse(localStorage.getItem('users')) || [];
-    users.push(user);
-    localStorage.setItem('users', JSON.stringify(users));
-    localStorage.setItem('currentUser', JSON.stringify(user));
-
-    setMessage('Регистрация успешна! Перенаправляем...');
-    
-    setTimeout(() => {
-      navigate('/profile');
-    }, 1500);
+    } catch (error) {
+      console.error('Ошибка регистрации:', error);
+      if (error.status === 422) {
+        setMessage('Ошибка валидации: проверьте введенные данные');
+        if (error.data?.error?.errors) {
+          const serverErrors = {};
+          Object.keys(error.data.error.errors).forEach(key => {
+            serverErrors[key] = error.data.error.errors[key].join(', ');
+          });
+          setErrors(prev => ({ ...prev, ...serverErrors }));
+        }
+      } else {
+        setMessage('Ошибка регистрации. Попробуйте позже.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    <div className="container mt-5">
+    <div className="container mt-4">
       <div className="row justify-content-center">
         <div className="col-md-8">
-          <div className="card">
-            <div className="card-body">
-              <h3 className="card-title text-center mb-4">Регистрация</h3>
+          <div className="card shadow">
+            <div className="card-body p-4">
+              <h3 className="card-title text-center mb-4 text-primary">Регистрация</h3>
               
               {message && (
-                <div className="alert alert-success">{message}</div>
+                <div className={`alert ${message.includes('успешна') ? 'alert-success' : 'alert-danger'}`}>
+                  {message}
+                </div>
               )}
               
               <form id="registerForm" onSubmit={handleSubmit}>
@@ -112,29 +143,34 @@ function Register() {
                       <label htmlFor="name" className="form-label">Имя *</label>
                       <input
                         type="text"
-                        className={`form-control ${errors.name ? 'is-invalid' : formData.name && !errors.name ? 'is-valid' : ''}`}
+                        className={`form-control ${errors.name ? 'is-invalid' : ''}`}
                         id="name"
                         name="name"
                         value={formData.name}
                         onChange={handleChange}
-                        required
+                        disabled={isLoading}
+                        placeholder="Иван Иванов"
                       />
                       {errors.name && <div className="invalid-feedback">{errors.name}</div>}
+                      <div className="form-text">Только кириллица, пробелы и дефисы</div>
                     </div>
                   </div>
+                  
                   <div className="col-md-6">
                     <div className="mb-3">
                       <label htmlFor="phone" className="form-label">Телефон *</label>
                       <input
                         type="tel"
-                        className={`form-control ${errors.phone ? 'is-invalid' : formData.phone && !errors.phone ? 'is-valid' : ''}`}
+                        className={`form-control ${errors.phone ? 'is-invalid' : ''}`}
                         id="phone"
                         name="phone"
                         value={formData.phone}
                         onChange={handleChange}
-                        required
+                        disabled={isLoading}
+                        placeholder="+79111234567"
                       />
                       {errors.phone && <div className="invalid-feedback">{errors.phone}</div>}
+                      <div className="form-text">Только цифры и знак +</div>
                     </div>
                   </div>
                 </div>
@@ -143,69 +179,89 @@ function Register() {
                   <label htmlFor="email" className="form-label">Email *</label>
                   <input
                     type="email"
-                    className={`form-control ${errors.email ? 'is-invalid' : formData.email && !errors.email ? 'is-valid' : ''}`}
+                    className={`form-control ${errors.email ? 'is-invalid' : ''}`}
                     id="email"
                     name="email"
                     value={formData.email}
                     onChange={handleChange}
-                    required
+                    disabled={isLoading}
+                    placeholder="user@example.com"
                   />
                   {errors.email && <div className="invalid-feedback">{errors.email}</div>}
                 </div>
                 
-                <div className="mb-3">
-                  <label htmlFor="password" className="form-label">Пароль *</label>
-                  <input
-                    type="password"
-                    className={`form-control ${errors.password ? 'is-invalid' : formData.password && !errors.password ? 'is-valid' : ''}`}
-                    id="password"
-                    name="password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    required
-                  />
-                  {errors.password && <div className="invalid-feedback">{errors.password}</div>}
-                  <div className="form-text">Минимум 7 символов, 1 цифра, 1 строчная и 1 заглавная буква</div>
-                </div>
-                
-                <div className="mb-3">
-                  <label htmlFor="confirmPassword" className="form-label">Подтверждение пароля *</label>
-                  <input
-                    type="password"
-                    className={`form-control ${errors.confirmPassword ? 'is-invalid' : formData.confirmPassword && !errors.confirmPassword ? 'is-valid' : ''}`}
-                    id="confirmPassword"
-                    name="confirmPassword"
-                    value={formData.confirmPassword}
-                    onChange={handleChange}
-                    required
-                  />
-                  {errors.confirmPassword && <div className="invalid-feedback">{errors.confirmPassword}</div>}
+                <div className="row">
+                  <div className="col-md-6">
+                    <div className="mb-3">
+                      <label htmlFor="password" className="form-label">Пароль *</label>
+                      <input
+                        type="password"
+                        className={`form-control ${errors.password ? 'is-invalid' : ''}`}
+                        id="password"
+                        name="password"
+                        value={formData.password}
+                        onChange={handleChange}
+                        disabled={isLoading}
+                        placeholder="Пароль"
+                      />
+                      {errors.password && <div className="invalid-feedback">{errors.password}</div>}
+                      <div className="form-text">Минимум 7 символов, 1 цифра, 1 строчная и 1 заглавная буква</div>
+                    </div>
+                  </div>
+                  
+                  <div className="col-md-6">
+                    <div className="mb-3">
+                      <label htmlFor="password_confirmation" className="form-label">Подтверждение пароля *</label>
+                      <input
+                        type="password"
+                        className={`form-control ${errors.password_confirmation ? 'is-invalid' : ''}`}
+                        id="password_confirmation"
+                        name="password_confirmation"
+                        value={formData.password_confirmation}
+                        onChange={handleChange}
+                        disabled={isLoading}
+                        placeholder="Подтвердите пароль"
+                      />
+                      {errors.password_confirmation && <div className="invalid-feedback">{errors.password_confirmation}</div>}
+                    </div>
+                  </div>
                 </div>
                 
                 <div className="mb-3 form-check">
                   <input
                     type="checkbox"
-                    className={`form-check-input ${errors.agree ? 'is-invalid' : formData.agree ? 'is-valid' : ''}`}
-                    id="agree"
-                    name="agree"
-                    checked={formData.agree}
+                    className={`form-check-input ${errors.confirm ? 'is-invalid' : ''}`}
+                    id="confirm"
+                    name="confirm"
+                    checked={formData.confirm === 1}
                     onChange={handleChange}
-                    required
+                    disabled={isLoading}
                   />
-                  <label className="form-check-label" htmlFor="agree">
+                  <label className="form-check-label" htmlFor="confirm">
                     Согласие на обработку персональных данных *
                   </label>
-                  {errors.agree && <div className="invalid-feedback d-block">{errors.agree}</div>}
+                  {errors.confirm && <div className="invalid-feedback d-block">{errors.confirm}</div>}
                 </div>
                 
-                <button type="submit" className="btn btn-primary w-100">
-                  Зарегистрироваться
-                </button>
+                <div className="d-grid gap-2">
+                  <button 
+                    type="submit" 
+                    className="btn btn-primary py-2"
+                    disabled={isLoading}
+                  >
+                    {isLoading ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-2"></span>
+                        Регистрация...
+                      </>
+                    ) : 'Зарегистрироваться'}
+                  </button>
+                  
+                  <Link to="/login" className="btn btn-outline-secondary">
+                    Уже есть аккаунт? Войти
+                  </Link>
+                </div>
               </form>
-              
-              <div className="text-center mt-3">
-                <Link to="/login">Уже есть аккаунт? Войдите</Link>
-              </div>
             </div>
           </div>
         </div>

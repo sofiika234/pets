@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { API_CONFIG } from '../App';
 
 function Header() {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [debounceTimer, setDebounceTimer] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -16,20 +19,50 @@ function Header() {
     }
   }, []);
 
-  // Моковые данные для поиска
-  const allPets = [
-    { id: 1, name: 'Мурка', type: 'Кошка', district: 'Центральный', 
-      image: 'default-cat.jpg', description: 'Ласковая кошка с белой шерстью' },
-    { id: 2, name: 'Дружок', type: 'Собака', district: 'Северный',
-      image: 'default-dog.jpg', description: 'Дружелюбный пес средних размеров' },
-    // ... другие животные
-  ];
+  // Функция для поиска животных через API
+  const searchAnimals = useCallback(async (query) => {
+    if (!query || query.length < 3) return;
+    
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_CONFIG.BASE_URL}/search?query=${encodeURIComponent(query)}`);
+      
+      if (response.status === 204) {
+        // Нет результатов
+        setSearchResults([]);
+        return;
+      }
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.data && data.data.orders) {
+          // Преобразуем данные API в нужный формат
+          const formattedResults = data.data.orders.slice(0, 5).map(order => ({
+            id: order.id,
+            name: order.kind || 'Без имени',
+            type: order.kind || 'Неизвестно',
+            district: order.district || 'Не указан',
+            image: order.photos ? (typeof order.photos === 'string' ? order.photos : order.photos[0]) : null,
+            description: order.description || 'Нет описания',
+            date: order.date
+          }));
+          setSearchResults(formattedResults);
+        }
+      }
+    } catch (error) {
+      console.error('Ошибка поиска:', error);
+      setSearchResults([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   const handleSearch = (e) => {
     e?.preventDefault();
     if (searchTerm.trim()) {
       navigate(`/search?q=${encodeURIComponent(searchTerm.trim())}`);
       setShowSearchResults(false);
+      setSearchTerm('');
     }
   };
 
@@ -37,21 +70,35 @@ function Header() {
     const value = e.target.value;
     setSearchTerm(value);
     
-    if (value.length >= 2) {
-      const results = allPets.filter(pet => 
-        pet.description.toLowerCase().includes(value.toLowerCase()) ||
-        pet.name.toLowerCase().includes(value.toLowerCase()) ||
-        pet.type.toLowerCase().includes(value.toLowerCase())
-      ).slice(0, 5);
-      setSearchResults(results);
-      setShowSearchResults(true);
+    // Очищаем предыдущий таймер
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+    
+    if (value.length >= 3) {
+      // Устанавливаем новый таймер для debounce (1000ms как в ТЗ)
+      const timer = setTimeout(() => {
+        searchAnimals(value);
+        setShowSearchResults(true);
+      }, 1000);
+      
+      setDebounceTimer(timer);
     } else {
       setShowSearchResults(false);
+      setSearchResults([]);
     }
+  };
+
+  // Получение URL изображения
+  const getImageUrl = (imagePath) => {
+    if (!imagePath) return '/default-pet.jpg';
+    if (imagePath.startsWith('http')) return imagePath;
+    return `${API_CONFIG.IMAGE_BASE}${imagePath}`;
   };
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
+    localStorage.removeItem('authToken');
     setCurrentUser(null);
     navigate('/main');
   };
@@ -99,32 +146,71 @@ function Header() {
                 </button>
               </form>
               
-              {/* Результаты поиска */}
-              {showSearchResults && searchResults.length > 0 && (
-                <div className="nav-search-results position-absolute top-100 start-0 end-0 bg-white shadow mt-1 rounded">
-                  {searchResults.map(pet => (
-                    <div 
-                      key={pet.id} 
-                      className="search-result-item p-2 border-bottom"
-                      onClick={() => {
-                        navigate(`/pet/${pet.id}`);
-                        setShowSearchResults(false);
-                      }}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <div className="d-flex align-items-center">
-                        <div className="me-2">
-                          <span className="fs-5">
-                            {pet.type === 'Собака' ? '🐕' : '🐈'}
-                          </span>
-                        </div>
-                        <div>
-                          <div className="fw-bold">{pet.name}</div>
-                          <div className="small text-muted">{pet.description.substring(0, 40)}...</div>
-                        </div>
-                      </div>
+              {/* Индикатор загрузки */}
+              {isLoading && (
+                <div className="position-absolute top-100 start-0 end-0 bg-white shadow mt-1 rounded p-2">
+                  <div className="text-center">
+                    <div className="spinner-border spinner-border-sm text-primary" role="status">
+                      <span className="visually-hidden">Загрузка...</span>
                     </div>
-                  ))}
+                    <span className="ms-2 small">Поиск...</span>
+                  </div>
+                </div>
+              )}
+              
+              {/* Результаты поиска */}
+              {showSearchResults && !isLoading && (
+                <div className="nav-search-results position-absolute top-100 start-0 end-0 bg-white shadow mt-1 rounded">
+                  {searchResults.length > 0 ? (
+                    <>
+                      {searchResults.map(pet => (
+                        <div 
+                          key={pet.id} 
+                          className="search-result-item p-2 border-bottom"
+                          onClick={() => {
+                            navigate(`/pet/${pet.id}`);
+                            setShowSearchResults(false);
+                            setSearchTerm('');
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <div className="d-flex align-items-center">
+                            <div className="me-2 flex-shrink-0">
+                              <img 
+                                src={getImageUrl(pet.image)} 
+                                alt={pet.name}
+                                className="rounded"
+                                style={{ width: '40px', height: '40px', objectFit: 'cover' }}
+                                onError={(e) => {
+                                  e.target.src = '/default-pet.jpg';
+                                }}
+                              />
+                            </div>
+                            <div className="flex-grow-1">
+                              <div className="fw-bold">{pet.name}</div>
+                              <div className="small text-muted text-truncate">
+                                {pet.description}
+                              </div>
+                              <div className="small">
+                                <span className="badge bg-secondary me-1">{pet.type}</span>
+                                <span className="badge bg-light text-dark">{pet.district}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="p-2 text-center small border-top">
+                        <Link to={`/search?q=${encodeURIComponent(searchTerm)}`} className="text-primary">
+                          Показать все результаты →
+                        </Link>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="p-3 text-center text-muted">
+                      <div>🐾</div>
+                      <div className="small">Ничего не найдено</div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

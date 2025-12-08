@@ -9,7 +9,13 @@ import Login from './components/pages/Login';
 import AddPet from './components/pages/AddPet';
 import Profile from './components/pages/Profile';
 import PetCard from './components/pages/PetCard';
-import './assets/style.css';
+import './assets/css/style.css';
+
+// Конфигурация API
+export const API_CONFIG = {
+  BASE_URL: 'https://pets.сделай.site/api',
+  IMAGE_BASE: 'https://pets.сделай.site'
+};
 
 function App() {
   return (
