@@ -316,54 +316,60 @@ function Main() {
                     </h2>
                     <p className="text-center mb-4 text-muted">Питомцы, которые уже обрели дом благодаря нашему сервису</p>
                     
-                    {isLoading ? (
-                        <div className="text-center py-5">
-                            <Spinner animation="border" variant="primary" />
-                            <p className="mt-3">Загрузка историй успеха...</p>
+{isLoading ? (
+    <div className="text-center py-5">
+        <Spinner animation="border" variant="primary" />
+        <p className="mt-3">Загрузка историй успеха...</p>
+    </div>
+) : stories.length > 0 ? (
+    <div className="position-relative">
+        <Carousel 
+            interval={4000} 
+            pause="hover" 
+            className="shadow-lg rounded overflow-hidden"
+            indicators={false} // Убираем стандартные индикаторы если нужно
+            nextIcon={<span aria-hidden="true" className="carousel-control-next-icon custom-next-icon" />}
+            prevIcon={<span aria-hidden="true" className="carousel-control-prev-icon custom-prev-icon" />}
+        >
+            {stories.map((story, index) => (
+                <Carousel.Item key={story.id}>
+                    <div className="position-relative" style={{ height: '500px' }}>
+                        <img
+                            className="d-block w-100 h-100"
+                            src={story.image}
+                            alt={story.title}
+                            style={{ 
+                                objectFit: 'cover',
+                                filter: 'brightness(0.8)'
+                            }}
+                            onError={(e) => {
+                                e.target.src = getDefaultImage();
+                                e.target.onerror = null;
+                            }}
+                        />
+                        <div className="carousel-caption d-flex flex-column justify-content-center h-100 p-4">
+                            <div className="caption-content bg-dark bg-opacity-60 p-4 rounded mx-auto" 
+                                 style={{ maxWidth: '800px' }}>
+                                <h3 className="display-6 mb-3 text-white">{story.title}</h3>
+                                <p className="lead text-white mb-4">{story.description}</p>
+                                <p className="text-light opacity-90 mb-0">
+                                    <i className="bi bi-calendar-check me-2"></i>
+                                    Найден дом: {formatDate(story.date)}
+                                </p>
+                            </div>
                         </div>
-                    ) : stories.length > 0 ? (
-                        <Carousel 
-                            interval={4000} 
-                            pause="hover" 
-                            className="shadow-lg rounded overflow-hidden"
-                        >
-                            {stories.map((story, index) => (
-                                <Carousel.Item key={story.id}>
-                                    <div className="position-relative" style={{ height: '500px' }}>
-                                        <img
-                                            className="d-block w-100 h-100"
-                                            src={story.image}
-                                            alt={story.title}
-                                            style={{ 
-                                                objectFit: 'cover',
-                                                filter: 'brightness(0.8)'
-                                            }}
-                                            onError={(e) => {
-                                                e.target.src = getDefaultImage();
-                                                e.target.onerror = null; // Предотвращаем бесконечный цикл ошибок
-                                            }}
-                                        />
-                                        <div className="carousel-caption d-flex flex-column justify-content-center h-100">
-                                            <div className="caption-content bg-dark bg-opacity-60 p-4 rounded">
-                                                <h3 className="display-6 mb-3 text-white">{story.title}</h3>
-                                                <p className="lead text-white">{story.description}</p>
-                                                <p className="text-light opacity-90">
-                                                    <i className="bi bi-calendar-check me-2"></i>
-                                                    Найден дом: {formatDate(story.date)}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </Carousel.Item>
-                            ))}
-                        </Carousel>
-                    ) : (
-                        <div className="text-center py-5 bg-light rounded">
-                            <div className="display-1 mb-3">🐾</div>
-                            <h4>Пока нет успешных историй</h4>
-                            <p className="text-muted">Будьте первым, кто поможет животному найти дом!</p>
-                        </div>
-                    )}
+                    </div>
+                </Carousel.Item>
+            ))}
+        </Carousel>
+    </div>
+) : (
+    <div className="text-center py-5 bg-light rounded">
+        <div className="display-1 mb-3">🐾</div>
+        <h4>Пока нет успешных историй</h4>
+        <p className="text-muted">Будьте первым, кто поможет животному найти дом!</p>
+    </div>
+)}
                 </div>
             </section>
 

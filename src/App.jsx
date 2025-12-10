@@ -11,8 +11,10 @@ import Profile from './components/pages/Profile';
 import PetCard from './components/pages/PetCard';
 import './assets/css/style.css';
 
-// Конфигурация API
-export const API_CONFIG = {
+// Экспортируем для использования в других файлах (если нужно)
+export { API_CONFIG };
+
+const API_CONFIG = {
   BASE_URL: 'https://pets.сделай.site/api',
   IMAGE_BASE: 'https://pets.сделай.site'
 };
