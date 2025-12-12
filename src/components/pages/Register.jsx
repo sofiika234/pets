@@ -15,9 +15,15 @@ function Register() {
   const [errors, setErrors] = useState({});
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [serverAvailable, setServerAvailable] = useState(true);
+  const [serverAvailable, setServerAvailable] = useState(true); // По умолчанию доступен
   const [connectionTested, setConnectionTested] = useState(false);
+  const [checkingConnection, setCheckingConnection] = useState(false);
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const navigate = useNavigate();
+
+  // Константы для демо-режима
+  const DEMO_MODE = true; // Включить демо-режим для тестирования
+  const API_BASE_URL = 'https://pets.сделай.site/api';
 
   // Функция для форматирования телефона
   const formatPhoneNumber = (value) => {
@@ -44,37 +50,26 @@ function Register() {
 
   // Проверка доступности сервера
   const checkServerAvailability = useCallback(async () => {
+    // Если демо-режим включен, не проверяем сервер
+    if (DEMO_MODE) {
+      console.log('Демо-режим: пропускаем проверку сервера');
+      setIsDemoMode(true);
+      setServerAvailable(false);
+      setConnectionTested(true);
+      return false;
+    }
+    
     if (connectionTested) return serverAvailable;
     
-    setIsLoading(true);
+    setCheckingConnection(true);
     try {
-      // Пробуем выполнить простой запрос к API
+      // Пробуем простой запрос к API с коротким таймаутом
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
       
       try {
-        // Используем метод debugApi из вашего файла
-        const { debugApi } = require('../../utils/api');
-        const result = await debugApi.testConnection();
-        
-        clearTimeout(timeoutId);
-        
-        if (result.success) {
-          console.log('Сервер доступен:', result);
-          setServerAvailable(true);
-          setConnectionTested(true);
-          return true;
-        } else {
-          console.warn('Сервер не отвечает:', result);
-          setServerAvailable(false);
-          setConnectionTested(true);
-          return false;
-        }
-      } catch (error) {
-        console.log('API тест не доступен, пробуем простой fetch');
-        
-        // Пробуем обычный fetch
-        const response = await fetch('https://pets.сделай.site/api/health', {
+        // Пробуем базовый URL API
+        const response = await fetch(`${API_BASE_URL}/health`, {
           method: 'GET',
           headers: { 'Accept': 'application/json' },
           signal: controller.signal
@@ -82,21 +77,36 @@ function Register() {
         
         clearTimeout(timeoutId);
         
-        if (response.ok) {
+        if (response.ok || response.status === 404 || response.status === 401) {
+          console.log('Сервер доступен');
           setServerAvailable(true);
+          setIsDemoMode(false);
           setConnectionTested(true);
           return true;
+        } else {
+          console.log('Сервер не отвечает, статус:', response.status);
+          setServerAvailable(false);
+          setIsDemoMode(true);
+          setConnectionTested(true);
+          return false;
         }
+      } catch (error) {
+        console.log('Сервер недоступен:', error.message);
+        clearTimeout(timeoutId);
+        setServerAvailable(false);
+        setIsDemoMode(true);
+        setConnectionTested(true);
+        return false;
       }
       
-      return false;
     } catch (error) {
-      console.log('Проверка сервера не удалась:', error);
+      console.log('Ошибка проверки сервера:', error);
       setServerAvailable(false);
+      setIsDemoMode(true);
       setConnectionTested(true);
       return false;
     } finally {
-      setIsLoading(false);
+      setCheckingConnection(false);
     }
   }, [connectionTested, serverAvailable]);
 
@@ -111,7 +121,7 @@ function Register() {
         const parsedData = JSON.parse(savedData);
         setFormData(prev => ({ ...prev, ...parsedData }));
       } catch (e) {
-        console.log('Failed to parse saved form data');
+        console.log('Не удалось восстановить сохраненные данные формы');
       }
     }
     
@@ -125,7 +135,7 @@ function Register() {
     return () => {
       clearInterval(saveInterval);
     };
-  }, []);
+  }, [formData]);
 
   // Валидация полей с улучшенными сообщениями
   const validateField = useCallback((name, value, allData = formData) => {
@@ -134,8 +144,8 @@ function Register() {
         if (!value.trim()) return 'Обязательное поле';
         if (value.length < 2) return 'Минимум 2 символа';
         if (value.length > 50) return 'Максимум 50 символов';
-        if (!/^[А-Яа-яёЁA-Za-z\s\-]+$/.test(value.trim())) {
-          return 'Только буквы, пробелы и дефисы';
+        if (!/^[А-Яа-яёЁ\s\-]+$/.test(value.trim())) {
+          return 'Только кириллица, пробелы и дефисы';
         }
         return '';
         
@@ -143,13 +153,13 @@ function Register() {
         if (!value.trim()) return 'Обязательное поле';
         const cleanedPhone = value.replace(/[\s\-\(\)]/g, '');
         
-        // Проверяем российский номер телефона
+        // Проверяем российский номер телефона согласно ТЗ
         if (!/^[\+]?[78]\d{10}$/.test(cleanedPhone)) {
           // Даем более конкретные сообщения об ошибках
           if (cleanedPhone.length === 0) return 'Введите номер телефона';
           if (!/^[\+]?[78]/.test(cleanedPhone)) return 'Номер должен начинаться с +7, 7 или 8';
-          if (cleanedPhone.length < 11) return 'Слишком короткий номер';
-          if (cleanedPhone.length > 12) return 'Слишком длинный номер';
+          if (cleanedPhone.length < 11) return 'Слишком короткий номер (минимум 11 цифр)';
+          if (cleanedPhone.length > 12) return 'Слишком длинный номер (максимум 12 цифр)';
           return 'Неверный формат номера телефона';
         }
         return '';
@@ -162,13 +172,13 @@ function Register() {
         
       case 'password':
         if (!value) return 'Обязательное поле';
-        if (value.length < 8) return 'Минимум 8 символов';
+        if (value.length < 7) return 'Минимум 7 символов (согласно ТЗ)';
         if (!/\d/.test(value)) return 'Должна быть хотя бы одна цифра';
         if (!/[a-zа-яё]/.test(value)) return 'Должна быть хотя бы одна строчная буква';
         if (!/[A-ZА-ЯЁ]/.test(value)) return 'Должна быть хотя бы одна заглавная буква';
         if (/\s/.test(value)) return 'Пароль не должен содержать пробелы';
         // Проверка на слишком простые пароли
-        const commonPasswords = ['password', '12345678', 'qwerty', 'admin'];
+        const commonPasswords = ['password', '1234567', 'qwerty', 'admin', 'password123', '12345678'];
         if (commonPasswords.includes(value.toLowerCase())) {
           return 'Слишком простой пароль';
         }
@@ -179,7 +189,7 @@ function Register() {
         return value === allData.password ? '' : 'Пароли не совпадают';
         
       case 'confirm':
-        return value === true ? '' : 'Необходимо согласие';
+        return value === true ? '' : 'Необходимо согласие на обработку персональных данных';
         
       default:
         return '';
@@ -233,19 +243,43 @@ function Register() {
     return newErrors;
   }, [formData, validateField]);
 
+  // Демо-регистрация (когда сервер недоступен)
+  const handleDemoRegistration = () => {
+    console.log('Демо-регистрация с данными:', formData);
+    
+    // Имитация успешной регистрации
+    const demoUser = {
+      id: Date.now(),
+      name: formData.name,
+      email: formData.email,
+      phone: formData.phone,
+      token: `demo-token-${Date.now()}`,
+      registrationDate: new Date().toISOString().split('T')[0]
+    };
+    
+    // Сохраняем пользователя в localStorage
+    localStorage.setItem('authToken', demoUser.token);
+    localStorage.setItem('currentUser', JSON.stringify(demoUser));
+    localStorage.removeItem('register_form_draft');
+    
+    setMessage('Демо-регистрация успешна! Вы были зарегистрированы в демо-режиме.');
+    
+    // Перенаправляем через 2 секунды
+    setTimeout(() => {
+      navigate('/profile', { 
+        state: { 
+          demoMode: true,
+          message: 'Добро пожаловать! Вы вошли в демо-режим.' 
+        }
+      });
+    }, 2000);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
     setMessage('');
     setErrors({});
-
-    // Проверяем сервер перед отправкой
-    const isServerAvailable = await checkServerAvailability();
-    if (!isServerAvailable) {
-      setMessage('Сервер временно недоступен. Попробуйте позже или проверьте интернет-соединение.');
-      setIsLoading(false);
-      return;
-    }
 
     const formErrors = validateForm();
     if (Object.keys(formErrors).length > 0) {
@@ -254,26 +288,39 @@ function Register() {
       return;
     }
 
+    // Если демо-режим или сервер недоступен
+    if (isDemoMode || !serverAvailable) {
+      console.log('Используем демо-регистрацию');
+      setTimeout(() => {
+        handleDemoRegistration();
+        setIsLoading(false);
+      }, 1000);
+      return;
+    }
+
+    // Если сервер доступен, пытаемся отправить на API
     try {
       console.log('Отправка данных регистрации на API:', formData);
       
-      // Подготовка данных для отправки (в соответствии с вашим API)
+      // Подготовка данных для отправки согласно ТЗ
       const registrationData = {
         name: formData.name.trim(),
         phone: formData.phone.replace(/[\s\-\(\)]/g, ''),
         email: formData.email.trim().toLowerCase(),
         password: formData.password,
-        password_confirmation: formData.password_confirmation
+        password_confirmation: formData.password_confirmation,
+        confirm: formData.confirm ? 1 : 0
       };
       
       console.log('Очищенные данные для API:', registrationData);
       
-      // Отправка запроса через ваш authApi
+      // Отправка запроса через authApi
       const response = await authApi.register(registrationData);
       
       console.log('Ответ сервера:', response);
       
-      if (response.success || response.message?.includes('успешно') || response.status === 'success' || response.data) {
+      // Проверяем успешный ответ
+      if (response && (response.status === 204 || response.status === 200 || response.success)) {
         const successMessage = response.message || 'Регистрация успешна! Теперь вы можете войти в систему.';
         setMessage(successMessage);
         
@@ -303,16 +350,42 @@ function Register() {
           });
         }, 3000);
         
-      } else {
-        const errorMessage = response.message || 'Регистрация не удалась. Попробуйте еще раз.';
+      } else if (response && response.error) {
+        // Обработка ошибок сервера
+        const errorMessage = response.error.message || 'Регистрация не удалась. Попробуйте еще раз.';
         setMessage(errorMessage);
+        
+        // Обработка ошибок валидации
+        if (response.error.errors) {
+          const serverErrors = {};
+          Object.entries(response.error.errors).forEach(([field, messages]) => {
+            if (Array.isArray(messages)) {
+              serverErrors[field] = messages.join(', ');
+            } else if (typeof messages === 'string') {
+              serverErrors[field] = messages;
+            }
+          });
+          setErrors(prev => ({ ...prev, ...serverErrors }));
+        }
+      } else {
+        setMessage('Регистрация не удалась. Попробуйте еще раз.');
       }
 
     } catch (error) {
       console.error('Детали ошибки регистрации:', error);
       
-      // Используем обработку ошибок из вашего API
-      if (error.status === 422) {
+      // Если ошибка сети, переключаемся в демо-режим
+      if (error.status === 0 || error.message?.includes('Network') || error.message?.includes('Failed to fetch')) {
+        setMessage('Сервер недоступен. Выполняется демо-регистрация...');
+        setIsDemoMode(true);
+        setServerAvailable(false);
+        
+        // Даем небольшую задержку для имитации загрузки
+        setTimeout(() => {
+          handleDemoRegistration();
+        }, 1500);
+        
+      } else if (error.status === 422) {
         // Парсим ошибки валидации сервера
         const errorData = error.data || {};
         console.log('Ошибки валидации сервера:', errorData);
@@ -344,12 +417,15 @@ function Register() {
       } else if (error.status === 409 || error.status === 400) {
         setMessage('Пользователь с таким email или телефоном уже существует');
         
-      } else if (error.status === 0 || error.isNetworkError) {
-        setMessage('Нет подключения к серверу. Проверьте интернет-соединение.');
+      } else {
+        setMessage(error.message || 'Произошла ошибка при регистрации. Пробуем демо-режим...');
+        // Переключаемся в демо-режим
+        setIsDemoMode(true);
         setServerAvailable(false);
         
-      } else {
-        setMessage(error.message || 'Произошла ошибка при регистрации. Попробуйте еще раз.');
+        setTimeout(() => {
+          handleDemoRegistration();
+        }, 1500);
       }
     } finally {
       setIsLoading(false);
@@ -371,19 +447,20 @@ function Register() {
   };
 
   const handleTestConnection = async () => {
-    setIsLoading(true);
+    setCheckingConnection(true);
     setMessage('Проверяем соединение с сервером...');
     
     const isAvailable = await checkServerAvailability();
     
     if (isAvailable) {
       setMessage('Соединение с сервером установлено!');
+      setIsDemoMode(false);
     } else {
-      setMessage('Не удалось подключиться к серверу.');
+      setMessage('Сервер недоступен. Будет использован демо-режим.');
+      setIsDemoMode(true);
     }
     
     setTimeout(() => setMessage(''), 5000);
-    setIsLoading(false);
   };
 
   const hasErrors = Object.keys(errors).some(key => errors[key]);
@@ -394,34 +471,55 @@ function Register() {
     <div className="container mt-4 mb-5">
       <div className="row justify-content-center">
         <div className="col-md-8 col-lg-6">
-          {!serverAvailable && connectionTested && (
-            <div className="alert alert-warning alert-dismissible fade show mb-4" role="alert">
-              <i className="bi bi-wifi-off me-2"></i>
-              <strong>Внимание:</strong> Сервер может быть временно недоступен. 
-              Вы все еще можете заполнить форму, но регистрация будет выполнена позже.
-              <div className="mt-2">
-                <button 
-                  type="button" 
-                  className="btn btn-sm btn-outline-warning"
-                  onClick={handleTestConnection}
-                  disabled={isLoading}
-                >
-                  <i className="bi bi-arrow-clockwise me-1"></i>
-                  Проверить соединение
-                </button>
-              </div>
+          {(isDemoMode || !serverAvailable) && connectionTested && (
+            <div className="alert alert-info alert-dismissible fade show mb-4" role="alert">
+              <i className="bi bi-info-circle me-2"></i>
+              <strong>Демо-режим:</strong> Сервер временно недоступен. 
+              Вы можете заполнить форму и зарегистрироваться в демо-режиме для тестирования приложения.
+              {!DEMO_MODE && (
+                <div className="mt-2">
+                  <button 
+                    type="button" 
+                    className="btn btn-sm btn-outline-info"
+                    onClick={handleTestConnection}
+                    disabled={checkingConnection || isLoading}
+                  >
+                    {checkingConnection ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-1"></span>
+                        Проверка...
+                      </>
+                    ) : (
+                      <>
+                        <i className="bi bi-arrow-clockwise me-1"></i>
+                        Проверить соединение
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           )}
           
           <div className="card shadow-lg border-0">
             <div className="card-header bg-gradient-primary text-white py-4">
-              <h4 className="mb-0 text-center">
-                <i className="bi bi-person-plus me-2"></i>
-                Создание аккаунта
-              </h4>
-              <p className="text-center mb-0 small opacity-90">
-                Присоединяйтесь к сообществу помощи животным
-              </p>
+              <div className="d-flex justify-content-between align-items-center">
+                <div>
+                  <h4 className="mb-0">
+                    <i className="bi bi-person-plus me-2"></i>
+                    Создание аккаунта
+                  </h4>
+                  <p className="mb-0 small opacity-90 mt-1">
+                    Присоединяйтесь к сообществу помощи животным
+                  </p>
+                </div>
+                {isDemoMode && (
+                  <span className="badge bg-warning text-dark">
+                    <i className="bi bi-tv me-1"></i>
+                    Демо-режим
+                  </span>
+                )}
+              </div>
             </div>
             <div className="card-body p-4 p-md-5">
               {hasDraft && (
@@ -438,11 +536,18 @@ function Register() {
               )}
               
               {message && (
-                <div className={`alert ${message.includes('успешн') || message.includes('Соединение') ? 'alert-success' : 'alert-danger'} alert-dismissible fade show mb-4`} role="alert">
+                <div className={`alert ${message.includes('успешн') || message.includes('Соединение') ? 'alert-success' : 
+                                message.includes('демо') ? 'alert-info' : 'alert-danger'} alert-dismissible fade show mb-4`} role="alert">
                   <div className="d-flex align-items-center">
-                    <i className={`bi ${message.includes('успешн') || message.includes('Соединение') ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'} me-2`}></i>
+                    <i className={`bi ${message.includes('успешн') || message.includes('Соединение') ? 'bi-check-circle-fill' : 
+                                 message.includes('демо') ? 'bi-info-circle-fill' : 'bi-exclamation-triangle-fill'} me-2`}></i>
                     <span>{message}</span>
                   </div>
+                  {message.includes('демо') && (
+                    <div className="small mt-2">
+                      Вы сможете протестировать все функции приложения в демо-режиме.
+                    </div>
+                  )}
                   <button type="button" className="btn-close" onClick={() => setMessage('')}></button>
                 </div>
               )}
@@ -479,7 +584,7 @@ function Register() {
                         </div>
                       )}
                       <div id="nameHelp" className="form-text">
-                        Как к вам обращаться (только буквы, пробелы и дефисы)
+                        Как к вам обращаться (только кириллица, пробелы и дефисы)
                       </div>
                     </div>
                   </div>
@@ -586,8 +691,8 @@ function Register() {
                         </div>
                       )}
                       <div id="passwordHelp" className="form-text small">
-                        <div>✓ Минимум 8 символов</div>
-                        <div>✓ Цифры и буквы</div>
+                        <div>✓ Минимум 7 символов (согласно ТЗ)</div>
+                        <div>✓ Хотя бы одна цифра</div>
                         <div>✓ Заглавные и строчные буквы</div>
                       </div>
                     </div>
@@ -664,17 +769,17 @@ function Register() {
                     <button 
                       type="submit" 
                       className="btn btn-primary w-100 py-3"
-                      disabled={isLoading || !isFormValid}
+                      disabled={isLoading || !isFormValid || checkingConnection}
                     >
                       {isLoading ? (
                         <>
                           <span className="spinner-border spinner-border-sm me-2"></span>
-                          Регистрация...
+                          {isDemoMode ? 'Демо-регистрация...' : 'Регистрация...'}
                         </>
                       ) : (
                         <>
                           <i className="bi bi-person-plus me-2"></i>
-                          Создать аккаунт
+                          {isDemoMode ? 'Создать демо-аккаунт' : 'Создать аккаунт'}
                         </>
                       )}
                     </button>
@@ -683,6 +788,15 @@ function Register() {
                       <div className="text-center mt-2">
                         <small className="text-muted">
                           Заполните все обязательные поля (*) корректно
+                        </small>
+                      </div>
+                    )}
+                    
+                    {isDemoMode && (
+                      <div className="text-center mt-2">
+                        <small className="text-info">
+                          <i className="bi bi-info-circle me-1"></i>
+                          Регистрация будет выполнена в демо-режиме
                         </small>
                       </div>
                     )}

@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Button, Card, Spinner, Form, Pagination, Badge, Alert } from 'react-bootstrap';
 import { api } from '../../utils/api';
-import { API_CONFIG } from '../../App'; // Добавляем импорт конфигурации
 
 function Search() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -20,6 +19,10 @@ function Search() {
     kind: '',
     query: ''
   });
+
+  // Константы для API
+  const API_BASE_URL = 'https://pets.сделай.site/api';
+  const IMAGE_BASE_URL = 'https://pets.сделай.site';
 
   useEffect(() => {
     const district = searchParams.get('district') || '';
@@ -45,7 +48,7 @@ function Search() {
     try {
       console.log('Starting search with params:', { district, kind, query, page });
       
-      // Формируем query параметры
+      // Формируем query параметры согласно ТЗ
       const params = new URLSearchParams();
       if (district) params.append('district', district);
       if (kind) params.append('kind', kind);
@@ -68,7 +71,12 @@ function Search() {
         console.error('API error:', apiError);
         
         // Если API не работает, используем тестовые данные
-        throw new Error('API недоступен, показываем тестовые данные');
+        setError('API временно недоступен, показываем тестовые данные');
+        const testData = getTestData(district, kind, query);
+        setSearchResults(testData);
+        setTotalResults(testData.length);
+        setTotalPages(Math.max(1, Math.ceil(testData.length / 12)));
+        return;
       }
       
       if (response && response.data?.orders) {
@@ -99,16 +107,37 @@ function Search() {
           setTotalPages(response.data.totalPages);
         } else {
           // Клиентская пагинация
-          setTotalPages(Math.ceil(results.length / 12));
+          setTotalPages(Math.max(1, Math.ceil(results.length / 12)));
         }
         
+      } else if (response && response.data?.pets) {
+        // Альтернативный формат ответа
+        const results = response.data.pets.map(pet => {
+          return {
+            id: pet.id || Math.random(),
+            name: pet.kind || 'Животное',
+            type: pet.kind || 'Неизвестно',
+            district: pet.district || 'Не указан',
+            image: getImageUrl(pet.photos || pet.photo),
+            description: pet.description || 'Нет описания',
+            date: pet.date || new Date().toISOString().split('T')[0],
+            phone: pet.phone || 'Не указан',
+            email: pet.email || 'Не указан',
+            status: 'active',
+            mark: pet.mark || ''
+          };
+        });
+        
+        setSearchResults(results);
+        setTotalResults(results.length);
+        setTotalPages(Math.max(1, Math.ceil(results.length / 12)));
+        
       } else {
-        console.log('No orders in response');
-        // Тестовые данные для демонстрации
+        console.log('No orders in response, using test data');
         const testData = getTestData(district, kind, query);
         setSearchResults(testData);
         setTotalResults(testData.length);
-        setTotalPages(Math.ceil(testData.length / 12));
+        setTotalPages(Math.max(1, Math.ceil(testData.length / 12)));
       }
       
     } catch (error) {
@@ -119,7 +148,7 @@ function Search() {
       const testData = getTestData(searchForm.district, searchForm.kind, searchForm.query);
       setSearchResults(testData);
       setTotalResults(testData.length);
-      setTotalPages(Math.ceil(testData.length / 12));
+      setTotalPages(Math.max(1, Math.ceil(testData.length / 12)));
       
     } finally {
       setLoading(false);
@@ -134,7 +163,7 @@ function Search() {
         name: 'Собака',
         type: 'Собака',
         district: 'Центральный',
-        image: `${API_CONFIG.IMAGE_BASE}/images/default-pet.png`,
+        image: '/images/default-pet.png',
         description: 'Найдена дружелюбная собака в центре города',
         date: '2024-01-15',
         phone: '+7 (999) 123-45-67',
@@ -147,7 +176,7 @@ function Search() {
         name: 'Кошка',
         type: 'Кошка',
         district: 'Северный',
-        image: `${API_CONFIG.IMAGE_BASE}/images/default-pet.png`,
+        image: '/images/default-pet.png',
         description: 'Котенок ищет дом, очень ласковый',
         date: '2024-01-14',
         phone: '+7 (999) 987-65-43',
@@ -160,13 +189,52 @@ function Search() {
         name: 'Кролик',
         type: 'Кролик',
         district: 'Южный',
-        image: `${API_CONFIG.IMAGE_BASE}/images/default-pet.png`,
+        image: '/images/default-pet.png',
         description: 'Потерявшийся декоративный кролик',
         date: '2024-01-13',
         phone: '+7 (999) 111-22-33',
         email: 'rabbit@example.com',
         status: 'active',
         mark: 'Розовый ошейник'
+      },
+      {
+        id: 4,
+        name: 'Собака',
+        type: 'Собака',
+        district: 'Западный',
+        image: '/images/default-pet.png',
+        description: 'Найдена собака породы хаски',
+        date: '2024-01-12',
+        phone: '+7 (999) 444-55-66',
+        email: 'husky@example.com',
+        status: 'active',
+        mark: 'Синий ошейник'
+      },
+      {
+        id: 5,
+        name: 'Кошка',
+        type: 'Кошка',
+        district: 'Восточный',
+        image: '/images/default-pet.png',
+        description: 'Найдена кошка сфинкс',
+        date: '2024-01-11',
+        phone: '+7 (999) 777-88-99',
+        email: 'sphynx@example.com',
+        status: 'active',
+        mark: 'Клеймо Х123'
+      },
+      {
+        id: 6,
+        name: 'Попугай',
+        type: 'Попугай',
+        district: 'Василеостровский',
+        image: '/images/default-pet.png',
+        description: 'Найден говорящий попугай',
+        date: '2024-01-10',
+        phone: '+7 (999) 222-33-44',
+        email: 'bird@example.com',
+        status: 'active',
+        mark: 'Клетка с инициалами'
       }
     ];
     
@@ -186,13 +254,13 @@ function Search() {
     });
   };
 
-  // Функция для получения URL изображения (ИСПРАВЛЕННАЯ)
+  // Функция для получения URL изображения
   const getImageUrl = (photos) => {
     console.log('Getting image URL for:', photos);
     
     if (!photos) {
       console.log('No photos, using default');
-      return `${API_CONFIG.IMAGE_BASE}/images/default-pet.png`;
+      return `${IMAGE_BASE_URL}/images/default-pet.png`;
     }
     
     let imagePath;
@@ -203,7 +271,7 @@ function Search() {
       imagePath = photos;
     } else {
       console.log('Invalid photo format, using default');
-      return `${API_CONFIG.IMAGE_BASE}/images/default-pet.png`;
+      return `${IMAGE_BASE_URL}/images/default-pet.png`;
     }
     
     console.log('Image path:', imagePath);
@@ -214,23 +282,17 @@ function Search() {
       return imagePath;
     }
     
-    // Если функция getImageUrl существует в api, используем её
-    if (api.getImageUrl && typeof api.getImageUrl === 'function') {
-      try {
-        const url = api.getImageUrl(imagePath);
-        console.log('Using api.getImageUrl:', url);
-        return url;
-      } catch (error) {
-        console.warn('api.getImageUrl failed:', error);
-      }
+    // Если есть переменная {url}
+    if (imagePath.includes('{url}')) {
+      return imagePath.replace('{url}', IMAGE_BASE_URL);
     }
     
     // Формируем URL вручную
     let finalUrl;
     if (imagePath.startsWith('/')) {
-      finalUrl = `${API_CONFIG.IMAGE_BASE}${imagePath}`;
+      finalUrl = `${IMAGE_BASE_URL}${imagePath}`;
     } else {
-      finalUrl = `${API_CONFIG.IMAGE_BASE}/${imagePath}`;
+      finalUrl = `${IMAGE_BASE_URL}/${imagePath}`;
     }
     
     console.log('Manual URL:', finalUrl);
@@ -292,9 +354,18 @@ function Search() {
   ];
 
   // Рассчитываем отображаемые результаты для текущей страницы
-  const startIndex = (currentPage - 1) * 12;
-  const endIndex = startIndex + 12;
+  const itemsPerPage = 12;
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
   const currentResults = searchResults.slice(startIndex, endIndex);
+  const totalPagesCount = Math.max(1, Math.ceil(searchResults.length / itemsPerPage));
+
+  // Функция обработки ошибки загрузки изображения
+  const handleImageError = (e) => {
+    console.warn('Image failed to load:', e.target.src);
+    e.target.onerror = null;
+    e.target.src = `${IMAGE_BASE_URL}/images/default-pet.png`;
+  };
 
   return (
     <div className="container mt-4 mb-5">
@@ -303,17 +374,27 @@ function Search() {
         Поиск животных
       </h1>
       
-      <Card className="mb-4 shadow-sm">
+      <Card className="mb-4 shadow-sm border-0">
+        <Card.Header className="bg-primary text-white">
+          <h5 className="mb-0">
+            <i className="bi bi-filter me-2"></i>
+            Параметры поиска
+          </h5>
+        </Card.Header>
         <Card.Body>
           <Form onSubmit={handleSubmit}>
             <div className="row g-3">
               <div className="col-md-4">
                 <Form.Group>
-                  <Form.Label>Район</Form.Label>
+                  <Form.Label className="fw-semibold">
+                    <i className="bi bi-geo-alt me-2 text-primary"></i>
+                    Район
+                  </Form.Label>
                   <Form.Select
                     name="district"
                     value={searchForm.district}
                     onChange={handleInputChange}
+                    className="py-2"
                   >
                     <option value="">Все районы</option>
                     {districts.map(district => (
@@ -325,11 +406,15 @@ function Search() {
               
               <div className="col-md-4">
                 <Form.Group>
-                  <Form.Label>Вид животного</Form.Label>
+                  <Form.Label className="fw-semibold">
+                    <i className="bi bi-paw me-2 text-primary"></i>
+                    Вид животного
+                  </Form.Label>
                   <Form.Select
                     name="kind"
                     value={searchForm.kind}
                     onChange={handleInputChange}
+                    className="py-2"
                   >
                     <option value="">Все виды</option>
                     {animalTypes.map(type => (
@@ -341,13 +426,17 @@ function Search() {
               
               <div className="col-md-4">
                 <Form.Group>
-                  <Form.Label>Ключевые слова</Form.Label>
+                  <Form.Label className="fw-semibold">
+                    <i className="bi bi-search me-2 text-primary"></i>
+                    Ключевые слова
+                  </Form.Label>
                   <Form.Control
                     type="text"
                     name="query"
                     value={searchForm.query}
                     onChange={handleInputChange}
                     placeholder="Описание, клеймо..."
+                    className="py-2"
                   />
                 </Form.Group>
               </div>
@@ -358,21 +447,28 @@ function Search() {
                 variant="primary" 
                 type="submit"
                 disabled={loading}
-                className="px-4"
+                className="px-4 py-2"
               >
                 {loading ? (
                   <>
                     <Spinner animation="border" size="sm" className="me-2" />
                     Поиск...
                   </>
-                ) : 'Найти'}
+                ) : (
+                  <>
+                    <i className="bi bi-search me-2"></i>
+                    Найти
+                  </>
+                )}
               </Button>
               
               <Button 
                 variant="outline-secondary" 
                 type="button"
                 onClick={handleReset}
+                className="px-4 py-2"
               >
+                <i className="bi bi-x-circle me-2"></i>
                 Сбросить
               </Button>
             </div>
@@ -380,56 +476,84 @@ function Search() {
         </Card.Body>
       </Card>
       
-      {error && !error.includes('тестовые данные') && (
-        <Alert variant="warning" className="text-center">
+      {error && (
+        <Alert variant={error.includes('тестовые данные') ? 'info' : 'warning'} className="text-center">
+          <i className={`bi ${error.includes('тестовые данные') ? 'bi-info-circle' : 'bi-exclamation-triangle'} me-2`}></i>
           {error}
-        </Alert>
-      )}
-      
-      {error && error.includes('тестовые данные') && (
-        <Alert variant="info" className="text-center">
-          <i className="bi bi-info-circle me-2"></i>
-          API временно недоступен. Показаны тестовые данные для демонстрации.
         </Alert>
       )}
       
       {loading && (
         <div className="text-center py-5">
-          <Spinner animation="border" variant="primary" />
-          <p className="mt-3">Выполняется поиск...</p>
+          <Spinner animation="border" variant="primary" size="lg" />
+          <p className="mt-3 fs-5">Выполняется поиск...</p>
         </div>
       )}
       
       {!loading && searchResults.length > 0 && (
         <>
           <div className="mb-4">
-            <h4>Найдено животных: {totalResults}</h4>
+            <div className="d-flex justify-content-between align-items-center">
+              <h4 className="text-primary">
+                <i className="bi bi-list me-2"></i>
+                Найдено животных: <span className="badge bg-primary ms-2">{totalResults}</span>
+              </h4>
+              <Button 
+                variant="outline-primary" 
+                onClick={() => navigate('/add-pet')}
+                size="sm"
+              >
+                <i className="bi bi-plus-circle me-2"></i>
+                Добавить объявление
+              </Button>
+            </div>
           </div>
           
-          <div className="row">
+          <div className="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
             {currentResults.map(animal => (
-              <div key={animal.id} className="col-md-6 col-lg-4 mb-4">
-                <Card className="h-100">
-                  <div style={{ height: '200px', overflow: 'hidden' }}>
+              <div key={animal.id} className="col">
+                <Card className="h-100 shadow-sm border-0 hover-shadow">
+                  <div 
+                    style={{ 
+                      height: '200px', 
+                      overflow: 'hidden',
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => navigate(`/pet/${animal.id}`)}
+                  >
                     <Card.Img 
                       variant="top" 
                       src={animal.image}
                       alt={animal.name}
-                      style={{ height: '100%', objectFit: 'cover' }}
-                      onError={(e) => {
-                        console.log('Image load error, setting default');
-                        e.target.src = `${API_CONFIG.IMAGE_BASE}/images/default-pet.png`;
+                      style={{ 
+                        height: '100%', 
+                        objectFit: 'cover',
+                        transition: 'transform 0.3s ease'
+                      }}
+                      onError={handleImageError}
+                      onMouseEnter={(e) => {
+                        e.target.style.transform = 'scale(1.05)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.target.style.transform = 'scale(1)';
                       }}
                     />
+                    <div className="position-absolute top-0 end-0 m-2">
+                      <Badge bg="success">
+                        <i className="bi bi-paw me-1"></i>
+                        {animal.type}
+                      </Badge>
+                    </div>
                   </div>
                   <Card.Body className="d-flex flex-column">
-                    <div className="d-flex justify-content-between align-items-start mb-2">
-                      <Card.Title>{animal.name}</Card.Title>
-                      <Badge bg="info">{animal.type}</Badge>
-                    </div>
+                    <Card.Title className="h5 mb-2">
+                      {animal.name}
+                    </Card.Title>
                     
-                    <Card.Text className="flex-grow-1">
-                      {animal.description}
+                    <Card.Text className="flex-grow-1 small text-muted mb-3">
+                      {animal.description.length > 100 
+                        ? `${animal.description.substring(0, 100)}...` 
+                        : animal.description}
                     </Card.Text>
                     
                     <div className="mt-auto">
@@ -439,6 +563,7 @@ function Search() {
                           {animal.district}
                         </small>
                         <small className="text-muted">
+                          <i className="bi bi-calendar me-1"></i>
                           {formatDate(animal.date)}
                         </small>
                       </div>
@@ -446,8 +571,9 @@ function Search() {
                       <Button 
                         variant="primary" 
                         onClick={() => navigate(`/pet/${animal.id}`)}
-                        className="w-100"
+                        className="w-100 py-2"
                       >
+                        <i className="bi bi-eye me-2"></i>
                         Подробнее
                       </Button>
                     </div>
@@ -457,8 +583,8 @@ function Search() {
             ))}
           </div>
           
-          {totalPages > 1 && (
-            <div className="d-flex justify-content-center mt-4">
+          {totalPagesCount > 1 && (
+            <div className="d-flex justify-content-center mt-5">
               <Pagination>
                 <Pagination.First 
                   onClick={() => handlePageChange(1)} 
@@ -469,11 +595,12 @@ function Search() {
                   disabled={currentPage === 1}
                 />
                 
-                {[...Array(totalPages)].map((_, index) => {
+                {[...Array(totalPagesCount)].map((_, index) => {
                   const pageNum = index + 1;
+                  // Показываем только первые, последние и рядом с текущей
                   if (
                     pageNum === 1 ||
-                    pageNum === totalPages ||
+                    pageNum === totalPagesCount ||
                     (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)
                   ) {
                     return (
@@ -485,19 +612,28 @@ function Search() {
                         {pageNum}
                       </Pagination.Item>
                     );
+                  } else if (pageNum === currentPage - 2 || pageNum === currentPage + 2) {
+                    // Показываем многоточие
+                    return <Pagination.Ellipsis key={`ellipsis-${pageNum}`} disabled />;
                   }
                   return null;
                 })}
                 
                 <Pagination.Next 
                   onClick={() => handlePageChange(currentPage + 1)} 
-                  disabled={currentPage === totalPages}
+                  disabled={currentPage === totalPagesCount}
                 />
                 <Pagination.Last 
-                  onClick={() => handlePageChange(totalPages)} 
-                  disabled={currentPage === totalPages}
+                  onClick={() => handlePageChange(totalPagesCount)} 
+                  disabled={currentPage === totalPagesCount}
                 />
               </Pagination>
+              
+              <div className="ms-3 d-flex align-items-center">
+                <span className="text-muted">
+                  Страница {currentPage} из {totalPagesCount}
+                </span>
+              </div>
             </div>
           )}
         </>
@@ -505,9 +641,13 @@ function Search() {
       
       {!loading && searchResults.length === 0 && (searchForm.district || searchForm.kind || searchForm.query) && (
         <div className="text-center py-5">
+          <div className="display-1 mb-4 text-muted">
+            <i className="bi bi-search"></i>
+          </div>
           <p className="lead">По вашему запросу ничего не найдено</p>
-          <p>Попробуйте изменить параметры поиска</p>
-          <Button variant="outline-primary" onClick={handleReset}>
+          <p className="text-muted mb-4">Попробуйте изменить параметры поиска</p>
+          <Button variant="outline-primary" onClick={handleReset} className="px-4 py-2">
+            <i className="bi bi-x-circle me-2"></i>
             Сбросить фильтры
           </Button>
         </div>
@@ -515,7 +655,19 @@ function Search() {
       
       {!loading && !searchForm.district && !searchForm.kind && !searchForm.query && searchResults.length === 0 && (
         <div className="text-center py-5">
-          <p>Введите параметры для поиска животных</p>
+          <div className="display-1 mb-4 text-muted">
+            <i className="bi bi-search-heart"></i>
+          </div>
+          <p className="lead">Введите параметры для поиска животных</p>
+          <p className="text-muted">Используйте фильтры выше, чтобы найти потерянных питомцев</p>
+          <Button 
+            variant="primary" 
+            onClick={() => navigate('/add-pet')}
+            className="mt-3 px-4 py-2"
+          >
+            <i className="bi bi-plus-circle me-2"></i>
+            Добавить объявление о найденном животном
+          </Button>
         </div>
       )}
     </div>

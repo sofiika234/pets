@@ -24,7 +24,7 @@ function AddPet() {
     register: false, // boolean согласно ТЗ
     password: '',
     password_confirmation: '',
-    confirm: 0 // integer 0 или 1 согласно ТЗ
+    confirm: 0 
   });
   
   const [errors, setErrors] = useState({});
