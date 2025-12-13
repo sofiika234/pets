@@ -1,833 +1,408 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { authApi } from '../../utils/api';
+import {
+  Form,
+  Button,
+  Card,
+  Alert,
+  Spinner,
+  Container,
+  Row,
+  Col
+} from 'react-bootstrap';
+import { authApi, validation } from '../../utils/api';
 
 function Register() {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [serverError, setServerError] = useState('');
+  const [success, setSuccess] = useState(false);
+
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
     email: '',
     password: '',
     password_confirmation: '',
-    confirm: false
+    confirm: 0
   });
-  
-  const [errors, setErrors] = useState({});
-  const [message, setMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [serverAvailable, setServerAvailable] = useState(true); // По умолчанию доступен
-  const [connectionTested, setConnectionTested] = useState(false);
-  const [checkingConnection, setCheckingConnection] = useState(false);
-  const [isDemoMode, setIsDemoMode] = useState(false);
-  const navigate = useNavigate();
 
-  // Константы для демо-режима
-  const DEMO_MODE = true; // Включить демо-режим для тестирования
-  const API_BASE_URL = 'https://pets.сделай.site/api';
+  // Валидация по ТЗ
+  const validateField = (name, value) => {
+    const fieldErrors = [];
 
-  // Функция для форматирования телефона
-  const formatPhoneNumber = (value) => {
-    // Удаляем все нецифровые символы кроме +
-    const cleaned = value.replace(/[^\d+]/g, '');
-    
-    // Если номер начинается с 8, меняем на +7
-    if (cleaned.startsWith('8')) {
-      return '+7' + cleaned.substring(1);
-    }
-    
-    // Если номер начинается с 7, добавляем +
-    if (cleaned.startsWith('7') && !cleaned.startsWith('+')) {
-      return '+' + cleaned;
-    }
-    
-    // Если номер начинается с 9 и нет кода страны, добавляем +7
-    if (cleaned.startsWith('9') && !cleaned.startsWith('+') && cleaned.length <= 10) {
-      return '+7' + cleaned;
-    }
-    
-    return cleaned;
-  };
-
-  // Проверка доступности сервера
-  const checkServerAvailability = useCallback(async () => {
-    // Если демо-режим включен, не проверяем сервер
-    if (DEMO_MODE) {
-      console.log('Демо-режим: пропускаем проверку сервера');
-      setIsDemoMode(true);
-      setServerAvailable(false);
-      setConnectionTested(true);
-      return false;
-    }
-    
-    if (connectionTested) return serverAvailable;
-    
-    setCheckingConnection(true);
-    try {
-      // Пробуем простой запрос к API с коротким таймаутом
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
-      
-      try {
-        // Пробуем базовый URL API
-        const response = await fetch(`${API_BASE_URL}/health`, {
-          method: 'GET',
-          headers: { 'Accept': 'application/json' },
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        
-        if (response.ok || response.status === 404 || response.status === 401) {
-          console.log('Сервер доступен');
-          setServerAvailable(true);
-          setIsDemoMode(false);
-          setConnectionTested(true);
-          return true;
-        } else {
-          console.log('Сервер не отвечает, статус:', response.status);
-          setServerAvailable(false);
-          setIsDemoMode(true);
-          setConnectionTested(true);
-          return false;
-        }
-      } catch (error) {
-        console.log('Сервер недоступен:', error.message);
-        clearTimeout(timeoutId);
-        setServerAvailable(false);
-        setIsDemoMode(true);
-        setConnectionTested(true);
-        return false;
-      }
-      
-    } catch (error) {
-      console.log('Ошибка проверки сервера:', error);
-      setServerAvailable(false);
-      setIsDemoMode(true);
-      setConnectionTested(true);
-      return false;
-    } finally {
-      setCheckingConnection(false);
-    }
-  }, [connectionTested, serverAvailable]);
-
-  useEffect(() => {
-    // Проверяем сервер при загрузке компонента
-    checkServerAvailability();
-    
-    // Восстанавливаем данные из localStorage, если есть
-    const savedData = localStorage.getItem('register_form_draft');
-    if (savedData) {
-      try {
-        const parsedData = JSON.parse(savedData);
-        setFormData(prev => ({ ...prev, ...parsedData }));
-      } catch (e) {
-        console.log('Не удалось восстановить сохраненные данные формы');
-      }
-    }
-    
-    // Автосохранение формы каждые 10 секунд
-    const saveInterval = setInterval(() => {
-      if (Object.values(formData).some(value => value && value !== '' && value !== false)) {
-        localStorage.setItem('register_form_draft', JSON.stringify(formData));
-      }
-    }, 10000);
-    
-    return () => {
-      clearInterval(saveInterval);
-    };
-  }, [formData]);
-
-  // Валидация полей с улучшенными сообщениями
-  const validateField = useCallback((name, value, allData = formData) => {
-    switch(name) {
+    switch (name) {
       case 'name':
-        if (!value.trim()) return 'Обязательное поле';
-        if (value.length < 2) return 'Минимум 2 символа';
-        if (value.length > 50) return 'Максимум 50 символов';
-        if (!/^[А-Яа-яёЁ\s\-]+$/.test(value.trim())) {
-          return 'Только кириллица, пробелы и дефисы';
-        }
-        return '';
-        
+        if (!value.trim()) fieldErrors.push('Имя обязательно');
+        else if (!validation.validateName(value))
+          fieldErrors.push('Допустимы только кириллица, пробел и дефис');
+        break;
+
       case 'phone':
-        if (!value.trim()) return 'Обязательное поле';
-        const cleanedPhone = value.replace(/[\s\-\(\)]/g, '');
-        
-        // Проверяем российский номер телефона согласно ТЗ
-        if (!/^[\+]?[78]\d{10}$/.test(cleanedPhone)) {
-          // Даем более конкретные сообщения об ошибках
-          if (cleanedPhone.length === 0) return 'Введите номер телефона';
-          if (!/^[\+]?[78]/.test(cleanedPhone)) return 'Номер должен начинаться с +7, 7 или 8';
-          if (cleanedPhone.length < 11) return 'Слишком короткий номер (минимум 11 цифр)';
-          if (cleanedPhone.length > 12) return 'Слишком длинный номер (максимум 12 цифр)';
-          return 'Неверный формат номера телефона';
-        }
-        return '';
-        
+        if (!value.trim()) fieldErrors.push('Телефон обязателен');
+        else if (!validation.validatePhone(value))
+          fieldErrors.push('Только цифры и знак +');
+        break;
+
       case 'email':
-        if (!value.trim()) return 'Обязательное поле';
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'Неверный формат email';
-        if (value.length > 100) return 'Email слишком длинный';
-        return '';
-        
+        if (!value.trim()) fieldErrors.push('Email обязателен');
+        else if (!validation.validateEmail(value))
+          fieldErrors.push('Неверный формат email');
+        break;
+
       case 'password':
-        if (!value) return 'Обязательное поле';
-        if (value.length < 7) return 'Минимум 7 символов (согласно ТЗ)';
-        if (!/\d/.test(value)) return 'Должна быть хотя бы одна цифра';
-        if (!/[a-zа-яё]/.test(value)) return 'Должна быть хотя бы одна строчная буква';
-        if (!/[A-ZА-ЯЁ]/.test(value)) return 'Должна быть хотя бы одна заглавная буква';
-        if (/\s/.test(value)) return 'Пароль не должен содержать пробелы';
-        // Проверка на слишком простые пароли
-        const commonPasswords = ['password', '1234567', 'qwerty', 'admin', 'password123', '12345678'];
-        if (commonPasswords.includes(value.toLowerCase())) {
-          return 'Слишком простой пароль';
-        }
-        return '';
-        
+        if (!value) fieldErrors.push('Пароль обязателен');
+        else if (!validation.validatePassword(value))
+          fieldErrors.push('Минимум 7 символов, 1 цифра, 1 строчная и 1 заглавная буква');
+        break;
+
       case 'password_confirmation':
-        if (!value) return 'Обязательное поле';
-        return value === allData.password ? '' : 'Пароли не совпадают';
-        
+        if (!value) fieldErrors.push('Подтверждение пароля обязательно');
+        else if (value !== formData.password)
+          fieldErrors.push('Пароли не совпадают');
+        break;
+
       case 'confirm':
-        return value === true ? '' : 'Необходимо согласие на обработку персональных данных';
-        
-      default:
-        return '';
+        if (!value || value === 0)
+          fieldErrors.push('Необходимо согласие на обработку данных');
+        break;
     }
-  }, [formData]);
+
+    return fieldErrors;
+  };
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    let fieldValue = type === 'checkbox' ? checked : value;
-    
-    // Особый случай для телефона - форматируем его
-    if (name === 'phone') {
-      fieldValue = formatPhoneNumber(value);
-    }
-    
+    const fieldValue = type === 'checkbox' ? (checked ? 1 : 0) : value;
+
     setFormData(prev => ({
       ...prev,
       [name]: fieldValue
     }));
 
-    // Для пароля и подтверждения пароля валидируем оба поля
-    if (name === 'password' || name === 'password_confirmation') {
-      const passwordError = validateField('password', name === 'password' ? fieldValue : formData.password);
-      const confirmError = validateField(
-        'password_confirmation', 
-        name === 'password_confirmation' ? fieldValue : formData.password_confirmation
-      );
-      
-      setErrors(prev => ({
-        ...prev,
-        password: passwordError,
-        password_confirmation: confirmError
-      }));
-    } else {
-      const error = validateField(name, fieldValue);
-      setErrors(prev => ({
-        ...prev,
-        [name]: error
-      }));
-    }
-    
-    if (message) setMessage('');
+    // Валидация в реальном времени
+    const fieldErrors = validateField(name, fieldValue);
+    setErrors(prev => ({
+      ...prev,
+      [name]: fieldErrors
+    }));
   };
 
-  const validateForm = useCallback(() => {
+  const validateForm = () => {
     const newErrors = {};
-    Object.keys(formData).forEach(field => {
-      const error = validateField(field, formData[field]);
-      if (error) newErrors[field] = error;
-    });
-    return newErrors;
-  }, [formData, validateField]);
+    let isValid = true;
 
-  // Демо-регистрация (когда сервер недоступен)
-  const handleDemoRegistration = () => {
-    console.log('Демо-регистрация с данными:', formData);
-    
-    // Имитация успешной регистрации
-    const demoUser = {
-      id: Date.now(),
-      name: formData.name,
-      email: formData.email,
-      phone: formData.phone,
-      token: `demo-token-${Date.now()}`,
-      registrationDate: new Date().toISOString().split('T')[0]
-    };
-    
-    // Сохраняем пользователя в localStorage
-    localStorage.setItem('authToken', demoUser.token);
-    localStorage.setItem('currentUser', JSON.stringify(demoUser));
-    localStorage.removeItem('register_form_draft');
-    
-    setMessage('Демо-регистрация успешна! Вы были зарегистрированы в демо-режиме.');
-    
-    // Перенаправляем через 2 секунды
-    setTimeout(() => {
-      navigate('/profile', { 
-        state: { 
-          demoMode: true,
-          message: 'Добро пожаловать! Вы вошли в демо-режим.' 
-        }
-      });
-    }, 2000);
+    Object.keys(formData).forEach(key => {
+      const fieldErrors = validateField(key, formData[key]);
+      if (fieldErrors.length > 0) {
+        newErrors[key] = fieldErrors;
+        isValid = false;
+      }
+    });
+
+    setErrors(newErrors);
+    return isValid;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setIsLoading(true);
-    setMessage('');
-    setErrors({});
+    setServerError('');
+    setSuccess(false);
 
-    const formErrors = validateForm();
-    if (Object.keys(formErrors).length > 0) {
-      setErrors(formErrors);
-      setIsLoading(false);
+    if (!validateForm()) {
       return;
     }
 
-    // Если демо-режим или сервер недоступен
-    if (isDemoMode || !serverAvailable) {
-      console.log('Используем демо-регистрацию');
-      setTimeout(() => {
-        handleDemoRegistration();
-        setIsLoading(false);
-      }, 1000);
-      return;
-    }
+    setLoading(true);
 
-    // Если сервер доступен, пытаемся отправить на API
     try {
-      console.log('Отправка данных регистрации на API:', formData);
-      
-      // Подготовка данных для отправки согласно ТЗ
+      // Подготовка данных согласно ТЗ
       const registrationData = {
         name: formData.name.trim(),
-        phone: formData.phone.replace(/[\s\-\(\)]/g, ''),
-        email: formData.email.trim().toLowerCase(),
+        phone: formData.phone.replace(/\s/g, ''),
+        email: formData.email.trim(),
         password: formData.password,
         password_confirmation: formData.password_confirmation,
-        confirm: formData.confirm ? 1 : 0
+        confirm: formData.confirm
       };
-      
-      console.log('Очищенные данные для API:', registrationData);
-      
-      // Отправка запроса через authApi
-      const response = await authApi.register(registrationData);
-      
-      console.log('Ответ сервера:', response);
-      
-      // Проверяем успешный ответ
-      if (response && (response.status === 204 || response.status === 200 || response.success)) {
-        const successMessage = response.message || 'Регистрация успешна! Теперь вы можете войти в систему.';
-        setMessage(successMessage);
-        
-        // Очищаем черновик после успешной регистрации
-        localStorage.removeItem('register_form_draft');
-        
-        // Сохраняем email для автозаполнения на странице входа
-        localStorage.setItem('last_registered_email', formData.email);
-        
-        // Очищаем форму
-        setFormData({
-          name: '',
-          phone: '',
-          email: '',
-          password: '',
-          password_confirmation: '',
-          confirm: false
-        });
-        
-        // Перенаправляем на страницу входа через 3 секунды
-        setTimeout(() => {
-          navigate('/login', { 
-            state: { 
-              prefillEmail: registrationData.email,
-              successMessage: successMessage 
-            }
-          });
-        }, 3000);
-        
-      } else if (response && response.error) {
-        // Обработка ошибок сервера
-        const errorMessage = response.error.message || 'Регистрация не удалась. Попробуйте еще раз.';
-        setMessage(errorMessage);
-        
-        // Обработка ошибок валидации
-        if (response.error.errors) {
-          const serverErrors = {};
-          Object.entries(response.error.errors).forEach(([field, messages]) => {
-            if (Array.isArray(messages)) {
-              serverErrors[field] = messages.join(', ');
-            } else if (typeof messages === 'string') {
-              serverErrors[field] = messages;
-            }
-          });
-          setErrors(prev => ({ ...prev, ...serverErrors }));
-        }
-      } else {
-        setMessage('Регистрация не удалась. Попробуйте еще раз.');
-      }
 
-    } catch (error) {
-      console.error('Детали ошибки регистрации:', error);
-      
-      // Если ошибка сети, переключаемся в демо-режим
-      if (error.status === 0 || error.message?.includes('Network') || error.message?.includes('Failed to fetch')) {
-        setMessage('Сервер недоступен. Выполняется демо-регистрация...');
-        setIsDemoMode(true);
-        setServerAvailable(false);
-        
-        // Даем небольшую задержку для имитации загрузки
-        setTimeout(() => {
-          handleDemoRegistration();
-        }, 1500);
-        
-      } else if (error.status === 422) {
-        // Парсим ошибки валидации сервера
-        const errorData = error.data || {};
-        console.log('Ошибки валидации сервера:', errorData);
-        
-        const serverErrors = {};
-        
-        if (errorData.errors) {
-          Object.entries(errorData.errors).forEach(([field, messages]) => {
-            if (Array.isArray(messages)) {
-              const message = messages.join(', ');
-              serverErrors[field] = message;
-            } else if (typeof messages === 'string') {
-              serverErrors[field] = messages;
-            }
+      console.log('Отправка данных регистрации:', registrationData);
+
+      // Отправка на API
+      const response = await authApi.register(registrationData);
+
+      console.log('Ответ сервера:', response);
+
+      if (response.success || response.status === 204) {
+        setSuccess(true);
+
+        // Автоматический вход после регистрации
+        try {
+          const loginResponse = await authApi.login({
+            email: registrationData.email,
+            password: registrationData.password
           });
+
+          if (loginResponse.data?.token) {
+            // Сохраняем пользователя в localStorage
+            localStorage.setItem('currentUser', JSON.stringify({
+              name: registrationData.name,
+              email: registrationData.email,
+              phone: registrationData.phone
+            }));
+
+            // Перенаправляем в личный кабинет
+            setTimeout(() => navigate('/profile'), 2000);
+          }
+        } catch (loginError) {
+          console.log('Автоматический вход не удался, перенаправляем на страницу входа');
+          setTimeout(() => navigate('/login'), 2000);
         }
-        
-        if (Object.keys(serverErrors).length > 0) {
-          setErrors(prev => ({ ...prev, ...serverErrors }));
-          setMessage('Пожалуйста, исправьте ошибки в форме');
-        } else if (errorData.message) {
-          setMessage(errorData.message);
-        } else if (typeof errorData === 'string') {
-          setMessage(errorData);
-        } else {
-          setMessage('Ошибка валидации данных');
-        }
-        
-      } else if (error.status === 409 || error.status === 400) {
-        setMessage('Пользователь с таким email или телефоном уже существует');
-        
       } else {
-        setMessage(error.message || 'Произошла ошибка при регистрации. Пробуем демо-режим...');
-        // Переключаемся в демо-режим
-        setIsDemoMode(true);
-        setServerAvailable(false);
-        
-        setTimeout(() => {
-          handleDemoRegistration();
-        }, 1500);
+        setServerError('Неизвестная ошибка при регистрации');
+      }
+    } catch (error) {
+      console.error('Ошибка регистрации:', error);
+
+      if (error.status === 422 && error.data?.errors) {
+        // Обработка ошибок валидации от сервера
+        const serverErrors = {};
+        Object.entries(error.data.errors).forEach(([field, messages]) => {
+          serverErrors[field] = Array.isArray(messages) ? messages : [messages];
+        });
+        setErrors(serverErrors);
+      } else {
+        setServerError(error.message || 'Ошибка при регистрации. Проверьте данные и попробуйте снова.');
       }
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const handleClearDraft = () => {
-    localStorage.removeItem('register_form_draft');
-    setFormData({
-      name: '',
-      phone: '',
-      email: '',
-      password: '',
-      password_confirmation: '',
-      confirm: false
-    });
-    setMessage('Черновик очищен');
-    setTimeout(() => setMessage(''), 3000);
-  };
+  const renderError = (fieldName) => {
+    if (!errors[fieldName] || errors[fieldName].length === 0) return null;
 
-  const handleTestConnection = async () => {
-    setCheckingConnection(true);
-    setMessage('Проверяем соединение с сервером...');
-    
-    const isAvailable = await checkServerAvailability();
-    
-    if (isAvailable) {
-      setMessage('Соединение с сервером установлено!');
-      setIsDemoMode(false);
-    } else {
-      setMessage('Сервер недоступен. Будет использован демо-режим.');
-      setIsDemoMode(true);
-    }
-    
-    setTimeout(() => setMessage(''), 5000);
+    return (
+      <div className="mt-1">
+        {errors[fieldName].map((error, index) => (
+          <small key={index} className="text-danger d-block">
+            <i className="bi bi-exclamation-circle me-1"></i>
+            {error}
+          </small>
+        ))}
+      </div>
+    );
   };
-
-  const hasErrors = Object.keys(errors).some(key => errors[key]);
-  const isFormValid = !hasErrors && formData.confirm;
-  const hasDraft = localStorage.getItem('register_form_draft');
 
   return (
-    <div className="container mt-4 mb-5">
-      <div className="row justify-content-center">
-        <div className="col-md-8 col-lg-6">
-          {(isDemoMode || !serverAvailable) && connectionTested && (
-            <div className="alert alert-info alert-dismissible fade show mb-4" role="alert">
-              <i className="bi bi-info-circle me-2"></i>
-              <strong>Демо-режим:</strong> Сервер временно недоступен. 
-              Вы можете заполнить форму и зарегистрироваться в демо-режиме для тестирования приложения.
-              {!DEMO_MODE && (
-                <div className="mt-2">
-                  <button 
-                    type="button" 
-                    className="btn btn-sm btn-outline-info"
-                    onClick={handleTestConnection}
-                    disabled={checkingConnection || isLoading}
+    <Container className="py-5">
+      <Row className="justify-content-center">
+        <Col md={8} lg={6}>
+          <Card className="shadow border-0">
+            <Card.Header className="bg-primary text-white py-3">
+              <h3 className="mb-0 text-center">
+                <i className="bi bi-person-plus me-2"></i>
+                Регистрация в сервисе GET PET BACK
+              </h3>
+            </Card.Header>
+
+            <Card.Body className="p-4">
+              {serverError && (
+                <Alert variant="danger" dismissible onClose={() => setServerError('')}>
+                  <Alert.Heading>Ошибка регистрации!</Alert.Heading>
+                  <p>{serverError}</p>
+                </Alert>
+              )}
+
+              {success && (
+                <Alert variant="success">
+                  <Alert.Heading>Успешная регистрация!</Alert.Heading>
+                  <p>Регистрация прошла успешно. Вы будете перенаправлены...</p>
+                  <Spinner animation="border" size="sm" />
+                </Alert>
+              )}
+
+              <Form onSubmit={handleSubmit}>
+                {/* Имя */}
+                <Form.Group className="mb-3">
+                  <Form.Label className="fw-semibold">
+                    <i className="bi bi-person me-2 text-primary"></i>
+                    Имя *
+                  </Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="name"
+                    value={formData.name}
+                    onChange={handleChange}
+                    placeholder="Введите ваше имя"
+                    isInvalid={!!errors.name}
+                    disabled={loading || success}
+                  />
+                  {renderError('name')}
+                  <Form.Text className="text-muted">
+                    Только кириллица, пробел и дефис
+                  </Form.Text>
+                </Form.Group>
+
+                {/* Телефон */}
+                <Form.Group className="mb-3">
+                  <Form.Label className="fw-semibold">
+                    <i className="bi bi-phone me-2 text-primary"></i>
+                    Телефон *
+                  </Form.Label>
+                  <Form.Control
+                    type="tel"
+                    name="phone"
+                    value={formData.phone}
+                    onChange={handleChange}
+                    placeholder="+79111234567"
+                    isInvalid={!!errors.phone}
+                    disabled={loading || success}
+                  />
+                  {renderError('phone')}
+                  <Form.Text className="text-muted">
+                    Только цифры и знак +, например: +79111234567
+                  </Form.Text>
+                </Form.Group>
+
+                {/* Email */}
+                <Form.Group className="mb-3">
+                  <Form.Label className="fw-semibold">
+                    <i className="bi bi-envelope me-2 text-primary"></i>
+                    Email *
+                  </Form.Label>
+                  <Form.Control
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    placeholder="user@example.com"
+                    isInvalid={!!errors.email}
+                    disabled={loading || success}
+                  />
+                  {renderError('email')}
+                  <Form.Text className="text-muted">
+                    Введите действующий email адрес
+                  </Form.Text>
+                </Form.Group>
+
+                {/* Пароль */}
+                <Form.Group className="mb-3">
+                  <Form.Label className="fw-semibold">
+                    <i className="bi bi-lock me-2 text-primary"></i>
+                    Пароль *
+                  </Form.Label>
+                  <Form.Control
+                    type="password"
+                    name="password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    placeholder="Введите пароль"
+                    isInvalid={!!errors.password}
+                    disabled={loading || success}
+                  />
+                  {renderError('password')}
+                  <Form.Text className="text-muted">
+                    Минимум 7 символов, 1 цифра, 1 строчная и 1 заглавная буква
+                  </Form.Text>
+                </Form.Group>
+
+                {/* Подтверждение пароля */}
+                <Form.Group className="mb-3">
+                  <Form.Label className="fw-semibold">
+                    <i className="bi bi-lock-fill me-2 text-primary"></i>
+                    Подтверждение пароля *
+                  </Form.Label>
+                  <Form.Control
+                    type="password"
+                    name="password_confirmation"
+                    value={formData.password_confirmation}
+                    onChange={handleChange}
+                    placeholder="Повторите пароль"
+                    isInvalid={!!errors.password_confirmation}
+                    disabled={loading || success}
+                  />
+                  {renderError('password_confirmation')}
+                </Form.Group>
+
+                {/* Согласие на обработку данных */}
+                <Form.Group className="mb-4">
+                  <Form.Check
+                    type="checkbox"
+                    name="confirm"
+                    id="confirm"
+                    label={
+                      <span>
+                        Я согласен на обработку персональных данных *
+                      </span>
+                    }
+                    checked={formData.confirm === 1}
+                    onChange={handleChange}
+                    isInvalid={!!errors.confirm}
+                    disabled={loading || success}
+                  />
+                  {renderError('confirm')}
+                </Form.Group>
+
+                {/* Кнопки */}
+                <div className="d-grid gap-2">
+                  <Button
+                    variant="primary"
+                    type="submit"
+                    size="lg"
+                    disabled={loading || success}
+                    className="py-2"
                   >
-                    {checkingConnection ? (
+                    {loading ? (
                       <>
-                        <span className="spinner-border spinner-border-sm me-1"></span>
-                        Проверка...
+                        <Spinner animation="border" size="sm" className="me-2" />
+                        Регистрация...
                       </>
                     ) : (
                       <>
-                        <i className="bi bi-arrow-clockwise me-1"></i>
-                        Проверить соединение
+                        <i className="bi bi-person-plus me-2"></i>
+                        Зарегистрироваться
                       </>
                     )}
-                  </button>
+                  </Button>
+
+                  <Button
+                    variant="outline-secondary"
+                    as={Link}
+                    to="/login"
+                    disabled={loading || success}
+                    className="py-2"
+                  >
+                    <i className="bi bi-arrow-left me-2"></i>
+                    Уже есть аккаунт? Войти
+                  </Button>
                 </div>
-              )}
-            </div>
-          )}
-          
-          <div className="card shadow-lg border-0">
-            <div className="card-header bg-gradient-primary text-white py-4">
-              <div className="d-flex justify-content-between align-items-center">
-                <div>
-                  <h4 className="mb-0">
-                    <i className="bi bi-person-plus me-2"></i>
-                    Создание аккаунта
-                  </h4>
-                  <p className="mb-0 small opacity-90 mt-1">
-                    Присоединяйтесь к сообществу помощи животным
-                  </p>
-                </div>
-                {isDemoMode && (
-                  <span className="badge bg-warning text-dark">
-                    <i className="bi bi-tv me-1"></i>
-                    Демо-режим
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="card-body p-4 p-md-5">
-              {hasDraft && (
-                <div className="alert alert-info alert-dismissible fade show mb-4" role="alert">
-                  <i className="bi bi-save me-2"></i>
-                  У вас есть сохраненный черновик формы
-                  <button 
-                    type="button" 
-                    className="btn-close" 
-                    onClick={handleClearDraft}
-                    title="Очистить черновик"
-                  ></button>
-                </div>
-              )}
-              
-              {message && (
-                <div className={`alert ${message.includes('успешн') || message.includes('Соединение') ? 'alert-success' : 
-                                message.includes('демо') ? 'alert-info' : 'alert-danger'} alert-dismissible fade show mb-4`} role="alert">
-                  <div className="d-flex align-items-center">
-                    <i className={`bi ${message.includes('успешн') || message.includes('Соединение') ? 'bi-check-circle-fill' : 
-                                 message.includes('демо') ? 'bi-info-circle-fill' : 'bi-exclamation-triangle-fill'} me-2`}></i>
-                    <span>{message}</span>
-                  </div>
-                  {message.includes('демо') && (
-                    <div className="small mt-2">
-                      Вы сможете протестировать все функции приложения в демо-режиме.
-                    </div>
-                  )}
-                  <button type="button" className="btn-close" onClick={() => setMessage('')}></button>
-                </div>
-              )}
-              
-              <form onSubmit={handleSubmit} noValidate>
-                <div className="row g-3">
-                  <div className="col-12">
-                    <div className="mb-3">
-                      <label htmlFor="name" className="form-label fw-semibold">
-                        <i className="bi bi-person me-2 text-primary"></i>
-                        Имя *
-                      </label>
-                      <input
-                        type="text"
-                        className={`form-control ${errors.name ? 'is-invalid' : formData.name ? 'is-valid' : ''}`}
-                        id="name"
-                        name="name"
-                        value={formData.name}
-                        onChange={handleChange}
-                        disabled={isLoading}
-                        placeholder="Иван Иванов"
-                        autoComplete="name"
-                        aria-describedby="nameHelp"
-                      />
-                      {errors.name ? (
-                        <div className="invalid-feedback d-flex align-items-center">
-                          <i className="bi bi-exclamation-circle me-2"></i>
-                          {errors.name}
-                        </div>
-                      ) : formData.name && (
-                        <div className="valid-feedback d-flex align-items-center">
-                          <i className="bi bi-check-circle me-2"></i>
-                          Корректное имя
-                        </div>
-                      )}
-                      <div id="nameHelp" className="form-text">
-                        Как к вам обращаться (только кириллица, пробелы и дефисы)
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="col-12">
-                    <div className="mb-3">
-                      <label htmlFor="phone" className="form-label fw-semibold">
-                        <i className="bi bi-phone me-2 text-primary"></i>
-                        Телефон *
-                      </label>
-                      <div className="input-group">
-                        <span className="input-group-text">
-                          <i className="bi bi-telephone"></i>
-                        </span>
-                        <input
-                          type="tel"
-                          className={`form-control ${errors.phone ? 'is-invalid' : formData.phone ? 'is-valid' : ''}`}
-                          id="phone"
-                          name="phone"
-                          value={formData.phone}
-                          onChange={handleChange}
-                          disabled={isLoading}
-                          placeholder="+7 (912) 345-67-89"
-                          autoComplete="tel"
-                          pattern="[\+]?[78][\d\s\-\(\)]{10,}"
-                          maxLength="18"
-                        />
-                      </div>
-                      {errors.phone ? (
-                        <div className="invalid-feedback d-flex align-items-center">
-                          <i className="bi bi-exclamation-circle me-2"></i>
-                          {errors.phone}
-                        </div>
-                      ) : formData.phone && (
-                        <div className="valid-feedback d-flex align-items-center">
-                          <i className="bi bi-check-circle me-2"></i>
-                          Корректный номер телефона
-                        </div>
-                      )}
-                      <div className="form-text">
-                        Пример: +7 912 345 67 89 или 8 (912) 345-67-89
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="col-12">
-                    <div className="mb-3">
-                      <label htmlFor="email" className="form-label fw-semibold">
-                        <i className="bi bi-envelope me-2 text-primary"></i>
-                        Email *
-                      </label>
-                      <input
-                        type="email"
-                        className={`form-control ${errors.email ? 'is-invalid' : formData.email ? 'is-valid' : ''}`}
-                        id="email"
-                        name="email"
-                        value={formData.email}
-                        onChange={handleChange}
-                        disabled={isLoading}
-                        placeholder="user@example.com"
-                        autoComplete="email"
-                      />
-                      {errors.email ? (
-                        <div className="invalid-feedback d-flex align-items-center">
-                          <i className="bi bi-exclamation-circle me-2"></i>
-                          {errors.email}
-                        </div>
-                      ) : formData.email && (
-                        <div className="valid-feedback d-flex align-items-center">
-                          <i className="bi bi-check-circle me-2"></i>
-                          Корректный email
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="col-md-6">
-                    <div className="mb-3 position-relative">
-                      <label htmlFor="password" className="form-label fw-semibold">
-                        <i className="bi bi-lock me-2 text-primary"></i>
-                        Пароль *
-                      </label>
-                      <input
-                        type="password"
-                        className={`form-control ${errors.password ? 'is-invalid' : formData.password ? 'is-valid' : ''}`}
-                        id="password"
-                        name="password"
-                        value={formData.password}
-                        onChange={handleChange}
-                        disabled={isLoading}
-                        placeholder="••••••••"
-                        autoComplete="new-password"
-                        aria-describedby="passwordHelp"
-                      />
-                      {errors.password ? (
-                        <div className="invalid-feedback d-flex align-items-center">
-                          <i className="bi bi-exclamation-circle me-2"></i>
-                          {errors.password}
-                        </div>
-                      ) : formData.password && (
-                        <div className="valid-feedback d-flex align-items-center">
-                          <i className="bi bi-check-circle me-2"></i>
-                          Надежный пароль
-                        </div>
-                      )}
-                      <div id="passwordHelp" className="form-text small">
-                        <div>✓ Минимум 7 символов (согласно ТЗ)</div>
-                        <div>✓ Хотя бы одна цифра</div>
-                        <div>✓ Заглавные и строчные буквы</div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="col-md-6">
-                    <div className="mb-3">
-                      <label htmlFor="password_confirmation" className="form-label fw-semibold">
-                        <i className="bi bi-lock-fill me-2 text-primary"></i>
-                        Подтверждение пароля *
-                      </label>
-                      <input
-                        type="password"
-                        className={`form-control ${errors.password_confirmation ? 'is-invalid' : formData.password_confirmation ? 'is-valid' : ''}`}
-                        id="password_confirmation"
-                        name="password_confirmation"
-                        value={formData.password_confirmation}
-                        onChange={handleChange}
-                        disabled={isLoading}
-                        placeholder="••••••••"
-                        autoComplete="new-password"
-                      />
-                      {errors.password_confirmation ? (
-                        <div className="invalid-feedback d-flex align-items-center">
-                          <i className="bi bi-exclamation-circle me-2"></i>
-                          {errors.password_confirmation}
-                        </div>
-                      ) : formData.password_confirmation && formData.password === formData.password_confirmation && (
-                        <div className="valid-feedback d-flex align-items-center">
-                          <i className="bi bi-check-circle me-2"></i>
-                          Пароли совпадают
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="col-12">
-                    <div className={`form-check mb-4 p-3 rounded ${errors.confirm ? 'border border-danger' : 'border'}`}>
-                      <input
-                        type="checkbox"
-                        className={`form-check-input ${errors.confirm ? 'is-invalid' : formData.confirm ? 'is-valid' : ''}`}
-                        id="confirm"
-                        name="confirm"
-                        checked={formData.confirm}
-                        onChange={handleChange}
-                        disabled={isLoading}
-                      />
-                      <label className="form-check-label ms-2" htmlFor="confirm">
-                        Я согласен на{' '}
-                        <Link to="/privacy" className="text-decoration-none fw-semibold" target="_blank">
-                          обработку персональных данных
-                        </Link>{' '}
-                        и принимаю{' '}
-                        <Link to="/terms" className="text-decoration-none fw-semibold" target="_blank">
-                          условия использования
-                        </Link>
-                        *
-                      </label>
-                      {errors.confirm ? (
-                        <div className="invalid-feedback d-block d-flex align-items-center mt-2">
-                          <i className="bi bi-exclamation-circle me-2"></i>
-                          {errors.confirm}
-                        </div>
-                      ) : formData.confirm && (
-                        <div className="valid-feedback d-block d-flex align-items-center mt-2">
-                          <i className="bi bi-check-circle me-2"></i>
-                          Согласие получено
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="col-12">
-                    <button 
-                      type="submit" 
-                      className="btn btn-primary w-100 py-3"
-                      disabled={isLoading || !isFormValid || checkingConnection}
-                    >
-                      {isLoading ? (
-                        <>
-                          <span className="spinner-border spinner-border-sm me-2"></span>
-                          {isDemoMode ? 'Демо-регистрация...' : 'Регистрация...'}
-                        </>
-                      ) : (
-                        <>
-                          <i className="bi bi-person-plus me-2"></i>
-                          {isDemoMode ? 'Создать демо-аккаунт' : 'Создать аккаунт'}
-                        </>
-                      )}
-                    </button>
-                    
-                    {!isFormValid && !isLoading && (
-                      <div className="text-center mt-2">
-                        <small className="text-muted">
-                          Заполните все обязательные поля (*) корректно
-                        </small>
-                      </div>
-                    )}
-                    
-                    {isDemoMode && (
-                      <div className="text-center mt-2">
-                        <small className="text-info">
-                          <i className="bi bi-info-circle me-1"></i>
-                          Регистрация будет выполнена в демо-режиме
-                        </small>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="col-12 text-center mt-4 pt-3 border-top">
-                    <p className="mb-3 text-muted">
-                      Уже есть аккаунт?
-                    </p>
-                    <Link 
-                      to="/login" 
-                      className="btn btn-outline-primary px-4"
-                      state={{ prefillEmail: formData.email }}
-                    >
-                      <i className="bi bi-box-arrow-in-right me-2"></i>
-                      Войти в систему
-                    </Link>
-                  </div>
-                  
-                  <div className="col-12 text-center mt-3">
-                    <p className="small text-muted">
-                      Нажимая кнопку "Создать аккаунт", вы соглашаетесь с нашими правилами
-                    </p>
-                  </div>
-                </div>
-              </form>
-            </div>
+              </Form>
+            </Card.Body>
+
+            <Card.Footer className="text-center bg-light py-3">
+              <p className="mb-0 text-muted small">
+                <i className="bi bi-shield-check me-1"></i>
+                Ваши данные защищены и используются только для работы сервиса
+              </p>
+            </Card.Footer>
+          </Card>
+
+          <div className="text-center mt-4">
+            <Button
+              variant="link"
+              as={Link}
+              to="/"
+              className="text-decoration-none"
+            >
+              <i className="bi bi-house me-2"></i>
+              Вернуться на главную
+            </Button>
           </div>
-        </div>
-      </div>
-    </div>
+        </Col>
+      </Row>
+    </Container>
   );
 }
 
