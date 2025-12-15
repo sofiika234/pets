@@ -12,7 +12,7 @@ import {
   Image,
   Badge
 } from 'react-bootstrap';
-import { petsApi, authApi } from '../../utils/api';
+import { petsApi, authApi, validation } from '../../utils/api';
 
 function AddPet() {
   const navigate = useNavigate();
@@ -37,6 +37,7 @@ function AddPet() {
 
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userData, setUserData] = useState(null);
   const [imagePreviews, setImagePreviews] = useState({
@@ -54,68 +55,52 @@ function AddPet() {
       if (token) {
         setIsAuthenticated(true);
         try {
-          // Сначала пытаемся получить данные из localStorage
-          const savedUser = localStorage.getItem('currentUser');
-          if (savedUser) {
-            const parsedUser = JSON.parse(savedUser);
-            setUserData(parsedUser);
-            
-            // Заполняем форму данными из localStorage
-            setFormData(prev => ({
-              ...prev,
-              name: parsedUser.name || '',
-              phone: parsedUser.phone || '',
-              email: parsedUser.email || ''
-            }));
-          }
-
-          // Затем обновляем данные с сервера
+          // Пробуем загрузить данные пользователя
           const response = await authApi.getUser();
-          if (response && response.data) {
-            let serverUserData;
+          
+          if (response && (response.data || response.success !== false)) {
+            let userData;
             
-            // Обработка разных форматов ответа согласно ТЗ
-            if (response.data.user) {
-              serverUserData = Array.isArray(response.data.user) 
+            // Обработка разных форматов ответа
+            if (response.data?.user) {
+              userData = Array.isArray(response.data.user) 
                 ? response.data.user[0] 
                 : response.data.user;
-            } else {
-              serverUserData = response.data;
+            } else if (response.data) {
+              userData = response.data;
+            } else if (response.user) {
+              userData = Array.isArray(response.user) ? response.user[0] : response.user;
             }
 
-            if (serverUserData) {
-              setUserData(serverUserData);
+            if (userData && userData.name) {
+              setUserData(userData);
               
-              // Обновляем localStorage
-              localStorage.setItem('currentUser', JSON.stringify(serverUserData));
-              
-              // Заполняем форму данными с сервера
+              // Заполняем форму данными пользователя
               setFormData(prev => ({
                 ...prev,
-                name: serverUserData.name || '',
-                phone: serverUserData.phone || '',
-                email: serverUserData.email || ''
+                name: userData.name || '',
+                phone: userData.phone || '',
+                email: userData.email || ''
               }));
+              
+              localStorage.setItem('currentUser', JSON.stringify(userData));
             }
           }
         } catch (error) {
-          console.error('Ошибка загрузки данных пользователя:', error);
-          // Если ошибка, используем данные из localStorage
-          if (!userData) {
-            const savedUser = localStorage.getItem('currentUser');
-            if (savedUser) {
-              try {
-                const parsedUser = JSON.parse(savedUser);
-                setUserData(parsedUser);
-                setFormData(prev => ({
-                  ...prev,
-                  name: parsedUser.name || '',
-                  phone: parsedUser.phone || '',
-                  email: parsedUser.email || ''
-                }));
-              } catch (parseError) {
-                console.error('Ошибка парсинга сохраненного пользователя:', parseError);
-              }
+          console.warn('Ошибка загрузки данных пользователя, используем данные из localStorage:', error.message);
+          const savedUser = localStorage.getItem('currentUser');
+          if (savedUser) {
+            try {
+              const parsedUser = JSON.parse(savedUser);
+              setUserData(parsedUser);
+              setFormData(prev => ({
+                ...prev,
+                name: parsedUser.name || '',
+                phone: parsedUser.phone || '',
+                email: parsedUser.email || ''
+              }));
+            } catch (parseError) {
+              console.error('Ошибка парсинга сохраненного пользователя:', parseError);
             }
           }
         }
@@ -129,31 +114,28 @@ function AddPet() {
     loadUserData();
   }, []);
 
-  // Валидация формы
+  // Валидация формы на стороне клиента согласно ТЗ
   const validateForm = () => {
     const newErrors = {};
     
     // Проверка имени
     if (!formData.name.trim()) {
       newErrors.name = 'Имя обязательно для заполнения';
-    } else if (!/^[А-Яа-яёЁ\s\-]+$/.test(formData.name)) {
+    } else if (!validation.validateName(formData.name)) {
       newErrors.name = 'Допустимы только кириллические буквы, пробелы и дефисы';
     }
 
     // Проверка телефона
     if (!formData.phone.trim()) {
       newErrors.phone = 'Телефон обязателен для заполнения';
-    } else {
-      const cleanedPhone = formData.phone.replace(/\s|-|\(|\)/g, '');
-      if (!/^\+?[0-9]+$/.test(cleanedPhone)) {
-        newErrors.phone = 'Только цифры, можно начинать с +7 или 8';
-      }
+    } else if (!validation.validatePhone(formData.phone)) {
+      newErrors.phone = 'Только цифры, можно начинать с +';
     }
 
     // Проверка email
     if (!formData.email.trim()) {
       newErrors.email = 'Email обязателен для заполнения';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+    } else if (!validation.validateEmail(formData.email)) {
       newErrors.email = 'Введите корректный email адрес';
     }
 
@@ -172,27 +154,25 @@ function AddPet() {
 
     if (!formData.photo1) {
       newErrors.photo1 = 'Фото 1 обязательно для загрузки';
-    } else if (formData.photo1.type !== 'image/png') {
+    } else if (!formData.photo1.type.includes('png') && !formData.photo1.name.toLowerCase().endsWith('.png')) {
       newErrors.photo1 = 'Фото должно быть в формате PNG';
     }
 
     // Проверка дополнительных фото
-    if (formData.photo2 && formData.photo2.type !== 'image/png') {
+    if (formData.photo2 && !formData.photo2.type.includes('png') && !formData.photo2.name.toLowerCase().endsWith('.png')) {
       newErrors.photo2 = 'Фото должно быть в формате PNG';
     }
 
-    if (formData.photo3 && formData.photo3.type !== 'image/png') {
+    if (formData.photo3 && !formData.photo3.type.includes('png') && !formData.photo3.name.toLowerCase().endsWith('.png')) {
       newErrors.photo3 = 'Фото должно быть в формате PNG';
     }
 
     // Проверка пароля (только если выбрана регистрация)
-    if (formData.register === 1) {
+    if (formData.register === 1 && !isAuthenticated) {
       if (!formData.password) {
         newErrors.password = 'Пароль обязателен для регистрации';
-      } else if (formData.password.length < 7) {
-        newErrors.password = 'Пароль должен содержать не менее 7 символов';
-      } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(formData.password)) {
-        newErrors.password = 'Пароль должен содержать минимум 1 заглавную букву, 1 строчную букву и 1 цифру';
+      } else if (!validation.validatePassword(formData.password)) {
+        newErrors.password = 'Пароль должен содержать не менее 7 символов, включая 1 заглавную букву, 1 строчную букву и 1 цифру';
       }
 
       if (!formData.password_confirmation) {
@@ -214,9 +194,10 @@ function AddPet() {
     const { name, value, type, checked, files } = e.target;
     
     if (type === 'checkbox') {
+      const newValue = checked ? 1 : 0;
       setFormData(prev => ({
         ...prev,
-        [name]: checked ? 1 : 0
+        [name]: newValue
       }));
       
       // Сброс полей пароля при отмене регистрации
@@ -230,35 +211,34 @@ function AddPet() {
     } else if (type === 'file' && files && files[0]) {
       const file = files[0];
       
-      if (file.type !== 'image/png') {
+      // Проверка PNG формата
+      const isPNG = file.type.includes('png') || file.name.toLowerCase().endsWith('.png');
+      
+      if (!isPNG) {
         setErrors(prev => ({
           ...prev,
           [name]: 'Файл должен быть в формате PNG'
         }));
-      } else {
-        setErrors(prev => ({ ...prev, [name]: '' }));
-        
-        // Создание превью
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setImagePreviews(prev => ({
-            ...prev,
-            [name]: reader.result
-          }));
-        };
-        reader.readAsDataURL(file);
-        
-        setFormData(prev => ({
-          ...prev,
-          [name]: file
-        }));
-      }
-    } else {
-      // Для авторизованных пользователей запрещаем изменение контактных данных
-      if (isAuthenticated && (name === 'name' || name === 'phone' || name === 'email')) {
         return;
       }
       
+      setErrors(prev => ({ ...prev, [name]: '' }));
+      
+      // Создание превью
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreviews(prev => ({
+          ...prev,
+          [name]: reader.result
+        }));
+      };
+      reader.readAsDataURL(file);
+      
+      setFormData(prev => ({
+        ...prev,
+        [name]: file
+      }));
+    } else {
       setFormData(prev => ({
         ...prev,
         [name]: value
@@ -274,14 +254,20 @@ function AddPet() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    console.log('Начало отправки формы...');
+    console.log('Данные формы:', formData);
+    console.log('Авторизован:', isAuthenticated);
+    
     // Валидация
     const validationErrors = validateForm();
+    console.log('Ошибки валидации:', validationErrors);
+    
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
       
       // Прокрутка к первой ошибке
       const firstErrorKey = Object.keys(validationErrors)[0];
-      const errorElement = document.getElementsByName(firstErrorKey)[0];
+      const errorElement = document.querySelector(`[name="${firstErrorKey}"]`);
       if (errorElement) {
         errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
         errorElement.focus();
@@ -292,74 +278,123 @@ function AddPet() {
     
     setLoading(true);
     setErrors({});
+    setSuccessMessage('');
     
     try {
-      // Создание FormData
+      // Создание FormData согласно ТЗ
       const formDataToSend = new FormData();
       
-      // Основные поля
+      console.log('Формируем FormData...');
+      
+      // Контактные данные (обязательны для всех согласно ТЗ)
       formDataToSend.append('name', formData.name.trim());
       formDataToSend.append('phone', formData.phone.trim());
       formDataToSend.append('email', formData.email.trim());
+      
+      // Обязательные поля объявления
       formDataToSend.append('kind', formData.kind.trim());
       formDataToSend.append('district', formData.district.trim());
       formDataToSend.append('description', formData.description.trim());
       
+      // Опциональные поля
       if (formData.mark.trim()) {
         formDataToSend.append('mark', formData.mark.trim());
       }
       
       // Фотографии
       formDataToSend.append('photo1', formData.photo1);
-      if (formData.photo2) formDataToSend.append('photo2', formData.photo2);
-      if (formData.photo3) formDataToSend.append('photo3', formData.photo3);
+      if (formData.photo2) {
+        formDataToSend.append('photo2', formData.photo2);
+      }
+      if (formData.photo3) {
+        formDataToSend.append('photo3', formData.photo3);
+      }
       
-      // Дополнительные поля
-      formDataToSend.append('confirm', formData.confirm);
-      formDataToSend.append('register', formData.register);
+      // Дополнительные поля (обязательные checkbox)
+      formDataToSend.append('confirm', formData.confirm.toString());
+      formDataToSend.append('register', formData.register.toString());
       
-      if (formData.register === 1) {
+      // Пароль только если выбрана регистрация
+      if (formData.register === 1 && !isAuthenticated) {
         formDataToSend.append('password', formData.password);
         formDataToSend.append('password_confirmation', formData.password_confirmation);
       }
       
-      // Отправка запроса
-      console.log('Отправка данных объявления...');
-      const response = await petsApi.addPet(formDataToSend);
-      
-      if (response.status === 200 || response.status === 201) {
-        // Успешное добавление
-        const successMsg = 'Объявление успешно добавлено!';
-        alert(successMsg);
-        
-        // Если пользователь зарегистрировался, сохраняем токен
-        if (formData.register === 1 && response.data?.token) {
-          localStorage.setItem('authToken', response.data.token);
-          setIsAuthenticated(true);
-        }
-        
-        // Перенаправление
-        if (isAuthenticated) {
-          navigate('/profile');
+      // Логирование содержимого FormData
+      console.log('Содержимое FormData:');
+      for (let [key, value] of formDataToSend.entries()) {
+        if (value instanceof File) {
+          console.log(`${key}: [File] ${value.name}, ${value.type}, ${value.size} bytes`);
         } else {
-          navigate('/');
+          console.log(`${key}: ${value}`);
         }
       }
       
+      console.log('Отправка запроса на сервер...');
+      
+      // Отправка запроса согласно ТЗ: POST {host}/api/pets
+      const response = await petsApi.addPet(formDataToSend);
+      
+      console.log('Ответ сервера:', response);
+      
+      if (response.status === 200 || response.status === 201 || response.status === 204) {
+        // Успешное добавление
+        const successMsg = 'Объявление успешно добавлено!';
+        setSuccessMessage(successMsg);
+        
+        // Если пользователь зарегистрировался
+        if (formData.register === 1 && response.data?.token) {
+          localStorage.setItem('authToken', response.data.token);
+          setIsAuthenticated(true);
+          
+          setTimeout(() => {
+            navigate('/profile');
+          }, 2000);
+        } else if (isAuthenticated) {
+          setTimeout(() => {
+            navigate('/profile');
+          }, 2000);
+        } else {
+          setTimeout(() => {
+            navigate('/');
+          }, 2000);
+        }
+      } else {
+        throw new Error('Не удалось добавить объявление');
+      }
+      
     } catch (error) {
-      console.error('Ошибка добавления объявления:', error);
+      console.error('Ошибка при добавлении объявления:', error);
+      console.error('Детали ошибки:', {
+        status: error.status,
+        message: error.message,
+        errors: error.errors,
+        data: error.data
+      });
       
       // Обработка ошибок валидации
-      if (error.response?.status === 422) {
-        const serverErrors = error.response.data?.error?.errors || {};
+      if (error.status === 422) {
+        const serverErrors = error.errors || error.data?.error?.errors || {};
+        console.log('Ошибки валидации с сервера:', serverErrors);
+        
         setErrors(serverErrors);
         
-        // Показываем ошибки
-        const errorMessages = Object.values(serverErrors).flat();
-        if (errorMessages.length > 0) {
-          alert(`Ошибки заполнения формы:\n${errorMessages.join('\n')}`);
+        // Формируем сообщение об ошибках
+        const errorMessages = [];
+        for (const [field, messages] of Object.entries(serverErrors)) {
+          if (Array.isArray(messages)) {
+            errorMessages.push(`${field}: ${messages.join(', ')}`);
+          } else if (typeof messages === 'string') {
+            errorMessages.push(`${field}: ${messages}`);
+          }
         }
-      } else if (error.message.includes('Failed to fetch')) {
+        
+        if (errorMessages.length > 0) {
+          alert(`Ошибки при заполнении формы:\n\n${errorMessages.join('\n')}`);
+        } else {
+          alert('Ошибка при обработке данных. Проверьте правильность заполнения всех полей.');
+        }
+      } else if (error.message.includes('Failed to fetch') || error.message.includes('Network Error')) {
         alert('Ошибка соединения с сервером. Проверьте интернет-соединение и попробуйте снова.');
       } else {
         alert(`Ошибка: ${error.message || 'Не удалось добавить объявление'}`);
@@ -387,6 +422,7 @@ function AddPet() {
             onClick={() => {
               setImagePreviews(prev => ({ ...prev, [name]: null }));
               setFormData(prev => ({ ...prev, [name]: null }));
+              setErrors(prev => ({ ...prev, [name]: '' }));
             }}
           >
             <i className="bi bi-x-circle me-1"></i> Удалить
@@ -409,6 +445,19 @@ function AddPet() {
     );
   }
 
+  // Список районов согласно ТЗ
+  const districts = [
+    'Центральный',
+    'Василеостровский', 
+    'Адмиралтейский',
+    'Петроградский',
+    'Московский',
+    'Кировский',
+    'Выборгский',
+    'Калининский',
+    'Невский'
+  ];
+
   return (
     <Container className="py-4">
       <Row className="justify-content-center">
@@ -423,32 +472,44 @@ function AddPet() {
             </Card.Header>
             
             <Card.Body>
-              {isAuthenticated && (
-                <Alert variant="info" className="mb-4">
-                  <i className="bi bi-info-circle me-2"></i>
-                  Вы авторизованы. Поля "Имя", "Телефон" и "Email" заполнены автоматически согласно ТЗ.
+              {successMessage && (
+                <Alert variant="success" className="mb-4">
+                  <i className="bi bi-check-circle me-2"></i>
+                  {successMessage}
+                  <div className="mt-2">
+                    {formData.register === 1 && !isAuthenticated ? 
+                      'Вы будете перенаправлены в личный кабинет...' :
+                      isAuthenticated ? 
+                      'Вы будете перенаправлены в профиль...' :
+                      'Вы будете перенаправлены на главную страницу...'}
+                  </div>
                 </Alert>
               )}
               
-              <Form onSubmit={handleSubmit} noValidate>
+              {isAuthenticated && (
+                <Alert variant="info" className="mb-4">
+                  <i className="bi bi-info-circle me-2"></i>
+                  Вы авторизованы. Поля "Имя", "Телефон" и "Email" заполнены автоматически.
+                </Alert>
+              )}
+              
+              <Form onSubmit={handleSubmit} noValidate encType="multipart/form-data">
                 {/* Информация о контактах */}
                 <Card className="mb-4">
                   <Card.Header>
                     <h5 className="mb-0">
                       <i className="bi bi-person-lines-fill me-2"></i>
-                      Информация о вас
+                      Ваши контактные данные
                     </h5>
-                    <small className="text-muted">Заполните ваши контактные данные</small>
+                    <small className="text-muted">Эти данные будут доступны владельцам животных</small>
                   </Card.Header>
                   <Card.Body>
                     <Row>
                       <Col md={6}>
                         <Form.Group className="mb-3">
                           <Form.Label>
-                            Имя * 
-                            {isAuthenticated && (
-                              <Badge bg="info" className="ms-2">Автоматически</Badge>
-                            )}
+                            Имя *
+                            {isAuthenticated && <Badge bg="info" className="ms-2">Из профиля</Badge>}
                           </Form.Label>
                           <Form.Control
                             type="text"
@@ -457,15 +518,14 @@ function AddPet() {
                             onChange={handleChange}
                             placeholder="Иван Иванов"
                             isInvalid={!!errors.name}
-                            disabled={isAuthenticated}
-                            readOnly={isAuthenticated}
                             required
+                            readOnly={isAuthenticated}
                           />
                           <Form.Control.Feedback type="invalid">
                             {errors.name}
                           </Form.Control.Feedback>
                           <Form.Text className="text-muted">
-                            Допустимы только кириллические буквы, пробелы и дефисы
+                            Только кириллические буквы, пробелы и дефисы
                           </Form.Text>
                         </Form.Group>
                       </Col>
@@ -473,21 +533,18 @@ function AddPet() {
                       <Col md={6}>
                         <Form.Group className="mb-3">
                           <Form.Label>
-                            Телефон * 
-                            {isAuthenticated && (
-                              <Badge bg="info" className="ms-2">Автоматически</Badge>
-                            )}
+                            Телефон *
+                            {isAuthenticated && <Badge bg="info" className="ms-2">Из профиля</Badge>}
                           </Form.Label>
                           <Form.Control
                             type="tel"
                             name="phone"
                             value={formData.phone}
                             onChange={handleChange}
-                            placeholder="+7 911 123-45-67"
+                            placeholder="+79111234567 или 89111234567"
                             isInvalid={!!errors.phone}
-                            disabled={isAuthenticated}
-                            readOnly={isAuthenticated}
                             required
+                            readOnly={isAuthenticated}
                           />
                           <Form.Control.Feedback type="invalid">
                             {errors.phone}
@@ -501,10 +558,8 @@ function AddPet() {
                       <Col md={12}>
                         <Form.Group className="mb-3">
                           <Form.Label>
-                            Email * 
-                            {isAuthenticated && (
-                              <Badge bg="info" className="ms-2">Автоматически</Badge>
-                            )}
+                            Email *
+                            {isAuthenticated && <Badge bg="info" className="ms-2">Из профиля</Badge>}
                           </Form.Label>
                           <Form.Control
                             type="email"
@@ -513,9 +568,8 @@ function AddPet() {
                             onChange={handleChange}
                             placeholder="user@example.com"
                             isInvalid={!!errors.email}
-                            disabled={isAuthenticated}
-                            readOnly={isAuthenticated}
                             required
+                            readOnly={isAuthenticated}
                           />
                           <Form.Control.Feedback type="invalid">
                             {errors.email}
@@ -555,9 +609,9 @@ function AddPet() {
                                 name="password"
                                 value={formData.password}
                                 onChange={handleChange}
-                                placeholder="Пароль"
+                                placeholder="Введите пароль"
                                 isInvalid={!!errors.password}
-                                required={formData.register === 1}
+                                required
                               />
                               <Form.Control.Feedback type="invalid">
                                 {errors.password}
@@ -576,9 +630,9 @@ function AddPet() {
                                 name="password_confirmation"
                                 value={formData.password_confirmation}
                                 onChange={handleChange}
-                                placeholder="Подтверждение пароля"
+                                placeholder="Повторите пароль"
                                 isInvalid={!!errors.password_confirmation}
-                                required={formData.register === 1}
+                                required
                               />
                               <Form.Control.Feedback type="invalid">
                                 {errors.password_confirmation}
@@ -638,15 +692,9 @@ function AddPet() {
                             required
                           >
                             <option value="">Выберите район</option>
-                            <option value="Центральный">Центральный</option>
-                            <option value="Василеостровский">Василеостровский</option>
-                            <option value="Адмиралтейский">Адмиралтейский</option>
-                            <option value="Петроградский">Петроградский</option>
-                            <option value="Московский">Московский</option>
-                            <option value="Кировский">Кировский</option>
-                            <option value="Выборгский">Выборгский</option>
-                            <option value="Калининский">Калининский</option>
-                            <option value="Невский">Невский</option>
+                            {districts.map(district => (
+                              <option key={district} value={district}>{district}</option>
+                            ))}
                           </Form.Select>
                           <Form.Control.Feedback type="invalid">
                             {errors.district}
@@ -662,7 +710,7 @@ function AddPet() {
                             name="mark"
                             value={formData.mark}
                             onChange={handleChange}
-                            placeholder="Например: VL-0214 или татуировка ABCD123"
+                            placeholder="VL-0214 или другая идентификация"
                           />
                           <Form.Text className="text-muted">
                             Если у животного есть клеймо, татуировка или чип
@@ -700,7 +748,7 @@ function AddPet() {
                   <Card.Header>
                     <h5 className="mb-0">
                       <i className="bi bi-images me-2"></i>
-                      Фотографии
+                      Фотографии животного
                     </h5>
                     <small className="text-muted">Только формат PNG</small>
                   </Card.Header>
@@ -773,8 +821,7 @@ function AddPet() {
                     
                     <Alert variant="info" className="mt-3">
                       <i className="bi bi-info-circle me-2"></i>
-                      Рекомендуем загружать четкие, хорошо освещенные фотографии, где животное хорошо видно.
-                      Фотографии должны быть в формате PNG.
+                      Загружайте четкие, хорошо освещенные фотографии в формате PNG.
                     </Alert>
                   </Card.Body>
                 </Card>
@@ -814,8 +861,7 @@ function AddPet() {
                       variant="outline-primary"
                       onClick={() => {
                         // Сброс формы
-                        setFormData(prev => ({
-                          ...prev,
+                        const resetData = {
                           kind: '',
                           district: '',
                           description: '',
@@ -827,6 +873,18 @@ function AddPet() {
                           photo1: null,
                           photo2: null,
                           photo3: null
+                        };
+                        
+                        // Сохраняем контактные данные
+                        if (isAuthenticated && userData) {
+                          resetData.name = userData.name || '';
+                          resetData.phone = userData.phone || '';
+                          resetData.email = userData.email || '';
+                        }
+                        
+                        setFormData(prev => ({
+                          ...prev,
+                          ...resetData
                         }));
                         setErrors({});
                         setImagePreviews({
@@ -834,6 +892,7 @@ function AddPet() {
                           photo2: null,
                           photo3: null
                         });
+                        setSuccessMessage('');
                       }}
                       disabled={loading}
                     >
@@ -865,13 +924,14 @@ function AddPet() {
             </Card.Body>
             
             <Card.Footer className="text-muted small">
-              <div className="d-flex justify-content-between">
+              <div className="d-flex justify-content-between align-items-center">
                 <span>
                   <i className="bi bi-shield-check me-1"></i>
                   Ваши данные защищены
                 </span>
                 <span>
-                  * - обязательные поля
+                  <i className="bi bi-asterisk text-danger me-1"></i>
+                  - обязательные поля
                 </span>
               </div>
             </Card.Footer>

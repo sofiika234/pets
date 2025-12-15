@@ -1,4 +1,4 @@
-// utils/api.js
+
 
 const API_CONFIG = {
   BASE_URL: 'https://pets.сделай.site/api',
