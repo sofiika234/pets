@@ -1,5 +1,3 @@
-
-
 const API_CONFIG = {
   BASE_URL: 'https://pets.сделай.site/api',
   IMAGE_BASE: 'https://pets.сделай.site'
@@ -19,12 +17,45 @@ export const validation = {
   }
 };
 
+// Хелпер для нормализации ответов API
+const normalizeApiResponse = (responseData, status) => {
+  if (!responseData) {
+    return {
+      success: status >= 200 && status < 300,
+      status: status,
+      data: null
+    };
+  }
+
+  // Если уже нормализованный ответ
+  if (responseData.success !== undefined) {
+    return responseData;
+  }
+
+  // Формат 1: { data: { ... } }
+  if (responseData.data !== undefined) {
+    return {
+      success: true,
+      status: status,
+      data: responseData.data,
+      ...responseData
+    };
+  }
+
+  // Формат 2: Прямые данные
+  return {
+    success: true,
+    status: status,
+    data: responseData
+  };
+};
+
 // Базовые функции API
 export const api = {
   async request(endpoint, options = {}) {
     try {
       const token = localStorage.getItem('authToken');
-      
+
       const headers = {
         'Accept': 'application/json',
         ...options.headers
@@ -41,7 +72,7 @@ export const api = {
       }
 
       const url = `${API_CONFIG.BASE_URL}${endpoint}`;
-      
+
       console.log(`API Request: ${options.method} ${url}`, { headers });
 
       const fetchOptions = {
@@ -51,63 +82,101 @@ export const api = {
         credentials: 'omit'
       };
 
-      const response = await fetch(url, fetchOptions);
+      // Таймаут запроса
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Таймаут запроса')), 10000)
+      );
+
+      const response = await Promise.race([
+        fetch(url, fetchOptions),
+        timeoutPromise
+      ]);
+
       return await this.handleResponse(response);
+
     } catch (error) {
       console.error('API Request Error:', error);
+
+      // Улучшенная обработка ошибок сети
+      if (error.message.includes('Failed to fetch') ||
+          error.message.includes('Network Error') ||
+          error.message.includes('Таймаут')) {
+        const networkError = new Error('Нет подключения к серверу. Проверьте интернет-соединение.');
+        networkError.status = 0;
+        error.isNetworkError = true;
+        throw networkError;
+      }
+
       throw error;
     }
   },
 
   async handleResponse(response) {
+    console.log(`API Response Status: ${response.status} ${response.statusText}`);
+
     // 204 No Content
     if (response.status === 204) {
       console.log('API Response: 204 No Content');
-      return { 
-        success: true, 
+      return {
+        success: true,
         status: 204,
-        data: null 
+        data: null
       };
     }
 
     const contentType = response.headers.get('content-type');
-    
+
     if (!contentType || !contentType.includes('application/json')) {
       const errorText = await response.text();
       console.log(`API Response (non-JSON): ${response.status}`, errorText.substring(0, 200));
-      
+
       if (response.ok) {
-        return { success: true, status: response.status, text: errorText };
+        return {
+          success: true,
+          status: response.status,
+          text: errorText,
+          data: { message: errorText }
+        };
       } else {
         const error = new Error(`HTTP error ${response.status}: ${errorText.substring(0, 100)}`);
         error.status = response.status;
+        error.text = errorText;
         throw error;
       }
     }
 
     try {
       const data = await response.json();
-      console.log(`API Response: ${response.status}`, data);
-      
-      if (!response.ok) {
-        const error = new Error(data.error?.message || `Ошибка сервера ${response.status}`);
-        error.status = response.status;
-        error.code = data.error?.code;
-        error.errors = data.error?.errors || {};
+      console.log(`API Response JSON: ${response.status}`, data);
+
+      // Обработка ошибок от сервера
+      if (!response.ok || data.error) {
+        const errorData = data.error || data;
+        const error = new Error(errorData.message || `Ошибка сервера ${response.status}`);
+        error.status = response.status || errorData.code;
+        error.code = errorData.code;
+        error.errors = errorData.errors || {};
         error.data = data;
         throw error;
       }
 
-      return data;
+      // Успешный ответ - нормализуем его
+      return normalizeApiResponse(data, response.status);
+
     } catch (jsonError) {
       console.error('JSON Parse Error:', jsonError);
-      
+
       if (response.ok) {
-        return { success: true, status: response.status };
+        return {
+          success: true,
+          status: response.status,
+          data: null
+        };
       }
-      
+
       const error = new Error('Ошибка обработки ответа сервера');
       error.status = response.status;
+      error.originalError = jsonError;
       throw error;
     }
   },
@@ -123,30 +192,26 @@ export const api = {
       });
       url = `${endpoint}?${queryParams.toString()}`;
     }
-    
+
     return this.request(url, { method: 'GET', ...options });
   },
 
   post(endpoint, data = null, isFormData = false, options = {}) {
     const requestOptions = { method: 'POST', ...options };
-
     if (isFormData) {
       requestOptions.body = data;
       requestOptions.isFormData = true;
     } else if (data) {
       requestOptions.body = JSON.stringify(data);
     }
-
     return this.request(endpoint, requestOptions);
   },
 
   patch(endpoint, data = null, options = {}) {
     const requestOptions = { method: 'PATCH', ...options };
-
     if (data) {
       requestOptions.body = JSON.stringify(data);
     }
-
     return this.request(endpoint, requestOptions);
   },
 
@@ -156,14 +221,12 @@ export const api = {
 
   put(endpoint, data = null, isFormData = false, options = {}) {
     const requestOptions = { method: 'PUT', ...options };
-
     if (isFormData) {
       requestOptions.body = data;
       requestOptions.isFormData = true;
     } else if (data) {
       requestOptions.body = JSON.stringify(data);
     }
-
     return this.request(endpoint, requestOptions);
   },
 
@@ -171,32 +234,29 @@ export const api = {
     if (!imagePath) {
       return `${API_CONFIG.IMAGE_BASE}/images/default-pet.jpg`;
     }
-
     if (typeof imagePath === 'string') {
       if (imagePath.startsWith('http')) return imagePath;
       if (imagePath.includes('{url}')) return imagePath.replace('{url}', API_CONFIG.IMAGE_BASE);
       if (imagePath.startsWith('/')) return `${API_CONFIG.IMAGE_BASE}${imagePath}`;
       return `${API_CONFIG.IMAGE_BASE}/${imagePath}`;
     }
-
     if (Array.isArray(imagePath) && imagePath.length > 0) {
       return this.getImageUrl(imagePath[0]);
     }
-
     return `${API_CONFIG.IMAGE_BASE}/images/default-pet.jpg`;
   },
 
   getImageUrls(photos) {
     if (!photos) return [this.getImageUrl(null)];
-    
+
     if (Array.isArray(photos)) {
       return photos.map(photo => this.getImageUrl(photo));
     }
-    
+
     if (typeof photos === 'string') {
       return [this.getImageUrl(photos)];
     }
-    
+
     return [this.getImageUrl(null)];
   }
 };
@@ -260,15 +320,38 @@ export const authApi = {
   // 1. Регистрация (ТЗ: {host}/api/register, POST)
   async register(userData) {
     try {
+      console.log('Регистрация пользователя:', userData);
       const response = await api.post('/register', userData, false, { public: true });
-      
+
+      console.log('Ответ регистрации:', response);
+
+      // Согласно ТЗ: при успешной регистрации может вернуться токен или статус 204
       if (response.data?.token) {
         localStorage.setItem('authToken', response.data.token);
+        console.log('Токен сохранен при регистрации');
+      } else if (response.status === 204 || response.status === 200) {
+        console.log('Регистрация успешна, но токен не получен');
+        // Возвращаем успешный ответ
+        return {
+          success: true,
+          status: response.status,
+          data: { message: 'Регистрация успешна' }
+        };
       }
-      
+
       return response;
+
     } catch (error) {
       console.error('Ошибка регистрации:', error);
+
+      // Обработка ошибок валидации
+      if (error.status === 422) {
+        const formattedError = new Error('Ошибка валидации');
+        formattedError.status = 422;
+        formattedError.errors = error.errors || error.data?.error?.errors || {};
+        throw formattedError;
+      }
+
       throw error;
     }
   },
@@ -277,14 +360,24 @@ export const authApi = {
   async login(credentials) {
     try {
       const response = await api.post('/login', credentials, false, { public: true });
-      
+
       if (response.data?.token) {
         localStorage.setItem('authToken', response.data.token);
+        console.log('Токен сохранен при входе');
       }
-      
+
       return response;
     } catch (error) {
       console.error('Ошибка входа:', error);
+
+      // Обработка ошибок валидации
+      if (error.status === 422) {
+        const formattedError = new Error('Ошибка валидации');
+        formattedError.status = 422;
+        formattedError.errors = error.errors || error.data?.error?.errors || {};
+        throw formattedError;
+      }
+
       throw error;
     }
   },
@@ -299,22 +392,20 @@ export const authApi = {
   async getUser() {
     try {
       const response = await api.get('/users/');
-      
+
       // Обработка согласно ТЗ
       let userData;
       if (response.data?.user) {
-        // Согласно ТЗ: "user": [ { ... } ] - массив
         userData = Array.isArray(response.data.user) ? response.data.user[0] : response.data.user;
         localStorage.setItem('currentUser', JSON.stringify(userData));
         if (userData.id) {
           localStorage.setItem('userId', userData.id.toString());
         }
       } else if (response.data) {
-        // Альтернативный формат
         userData = response.data;
         localStorage.setItem('currentUser', JSON.stringify(userData));
       }
-      
+
       return response;
     } catch (error) {
       console.error('Ошибка загрузки пользователя:', error);
@@ -392,7 +483,7 @@ export const searchApi = {
       page,
       limit
     };
-    
+
     return api.get('/search/', params, { public: true });
   }
 };

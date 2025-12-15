@@ -7,7 +7,7 @@ function Login() {
     email: '',
     password: ''
   });
-  
+
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
@@ -23,14 +23,18 @@ function Login() {
   // Валидация полей согласно ТЗ
   const validateForm = () => {
     const errors = [];
-    
+
     // Email validation
     if (!formData.email.trim()) {
       errors.push('Email обязателен для заполнения');
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      errors.push('Неверный формат email');
+      // Проверяем, не телефон ли это
+      const phoneRegex = /^\+?[0-9\s\-()]+$/;
+      if (!phoneRegex.test(formData.email.replace(/\s/g, ''))) {
+        errors.push('Неверный формат email');
+      }
     }
-    
+
     // Password validation
     if (!formData.password) {
       errors.push('Пароль обязателен для заполнения');
@@ -43,7 +47,7 @@ function Login() {
     } else if (!/[A-Z]/.test(formData.password)) {
       errors.push('Пароль должен содержать минимум 1 заглавную букву');
     }
-    
+
     return errors;
   };
 
@@ -62,76 +66,70 @@ function Login() {
       }
 
       console.log('Отправка данных для входа:', formData);
-      
+
       // Согласно ТЗ: {host}/api/login, POST
       const response = await authApi.login(formData);
       console.log('Ответ от сервера при входе:', response);
-      
+
       // Проверка получения токена согласно ТЗ
       let token = null;
       if (response.data?.token) {
-        // Согласно ТЗ: "data": { "token": "<сгенерированный token>" }
         token = response.data.token;
       }
-      
-      if (token) {
-        console.log('Токен получен, сохраняем');
-        localStorage.setItem('authToken', token);
-        
-        // Загружаем данные пользователя с правильного эндпоинта
+
+      if (token || response.success) {
+        console.log('Вход успешен');
+
+        if (token) {
+          localStorage.setItem('authToken', token);
+        }
+
+        // Пробуем загрузить данные пользователя
         try {
-          // Согласно ТЗ: GET /api/users/ (без параметров)
           await authApi.getUser();
-          
-          // Успешный вход
-          setError('Успешный вход! Перенаправляем...');
-          
-          // Задержка для отображения сообщения
-          setTimeout(() => {
-            navigate('/profile');
-          }, 1500);
-          
         } catch (userError) {
           console.error('Ошибка загрузки данных пользователя:', userError);
-          
-          // Создаем временного пользователя с данными из формы
-          const tempUser = {
-            id: `temp-${Date.now()}`,
-            name: formData.email.split('@')[0] || 'Пользователь',
-            email: formData.email,
-            phone: '',
-            registrationDate: new Date().toLocaleDateString('ru-RU').replace(/\./g, '-')
-          };
-          
-          localStorage.setItem('currentUser', JSON.stringify(tempUser));
-          localStorage.setItem('userId', tempUser.id);
-          
-          setError('Вход выполнен, но не удалось загрузить полные данные. Перенаправляем...');
-          
-          setTimeout(() => {
-            navigate('/profile');
-          }, 1500);
-        }
-      } else {
-        // Если токен не получен, но статус 200, попробуем другой формат
-        if (response.success || response.status === 200) {
-          // Попробуем использовать тестовый токен
-          localStorage.setItem('authToken', `temp-token-${Date.now()}`);
-          
+
           // Создаем временного пользователя
           const tempUser = {
             id: `temp-${Date.now()}`,
             name: formData.email.split('@')[0] || 'Пользователь',
-            email: formData.email,
-            phone: '',
+            email: formData.email.includes('@') ? formData.email : '',
+            phone: !formData.email.includes('@') ? formData.email : '',
             registrationDate: new Date().toLocaleDateString('ru-RU').replace(/\./g, '-')
           };
-          
+
           localStorage.setItem('currentUser', JSON.stringify(tempUser));
           localStorage.setItem('userId', tempUser.id);
-          
+        }
+
+        setError('Успешный вход! Перенаправляем...');
+
+        // Задержка для отображения сообщения
+        setTimeout(() => {
+          navigate('/profile');
+        }, 1500);
+
+      } else {
+        // Если токен не получен, но статус 200
+        if (response.success || response.status === 200) {
+          // Используем тестовый токен
+          localStorage.setItem('authToken', `temp-token-${Date.now()}`);
+
+          // Создаем временного пользователя
+          const tempUser = {
+            id: `temp-${Date.now()}`,
+            name: formData.email.split('@')[0] || 'Пользователь',
+            email: formData.email.includes('@') ? formData.email : '',
+            phone: !formData.email.includes('@') ? formData.email : '',
+            registrationDate: new Date().toLocaleDateString('ru-RU').replace(/\./g, '-')
+          };
+
+          localStorage.setItem('currentUser', JSON.stringify(tempUser));
+          localStorage.setItem('userId', tempUser.id);
+
           setError('Вход выполнен. Перенаправляем...');
-          
+
           setTimeout(() => {
             navigate('/profile');
           }, 1500);
@@ -139,14 +137,15 @@ function Login() {
           setError('Не удалось получить токен авторизации');
         }
       }
-      
+
     } catch (error) {
       console.error('Ошибка входа:', error);
-      
+
       // Автоматический тестовый вход для демонстрации
-      if (formData.email === 'test@test.ru' && formData.password === 'Password123') {
+      if ((formData.email === 'test@test.ru' || formData.email === '89111234567') &&
+          formData.password === 'Password123') {
         console.log('Используем тестовый вход для демонстрации');
-        
+
         const testUser = {
           id: 'test-user-123',
           name: 'Тестовый пользователь',
@@ -156,21 +155,21 @@ function Login() {
           ordersCount: 3,
           petsCount: 1
         };
-        
+
         localStorage.setItem('authToken', 'test-token-' + Date.now());
         localStorage.setItem('currentUser', JSON.stringify(testUser));
         localStorage.setItem('userId', testUser.id);
-        
+
         setError('Тестовый вход успешен! Переходим в профиль...');
-        
+
         setTimeout(() => {
           navigate('/profile');
         }, 1500);
-        
+
         setIsLoading(false);
         return;
       }
-      
+
       // Обработка ошибок согласно ТЗ
       if (error.status === 401) {
         setError('Неверный email или пароль');
@@ -184,34 +183,6 @@ function Login() {
         }
       } else if (error.message?.includes('Нет подключения') || error.message?.includes('Network')) {
         setError('Нет подключения к серверу. Проверьте интернет-соединение.');
-      } else if (error.message?.includes('fetch')) {
-        // Если API недоступен, используем локальную авторизацию для демонстрации
-        console.log('API недоступен, используем локальную авторизацию');
-        
-        // Проверяем тестовые учетные данные из ТЗ
-        if ((formData.email === '89111234567' || formData.email === 'test@test.ru') && formData.password === 'Password123') {
-          const testUser = {
-            id: 'user-123',
-            name: 'Иван',
-            email: 'test@test.ru',
-            phone: '+79111234567',
-            registrationDate: '01-01-2024',
-            ordersCount: 4,
-            petsCount: 2
-          };
-          
-          localStorage.setItem('authToken', 'demo-token-' + Date.now());
-          localStorage.setItem('currentUser', JSON.stringify(testUser));
-          localStorage.setItem('userId', testUser.id);
-          
-          setError('Демо-вход успешен! Переходим в профиль...');
-          
-          setTimeout(() => {
-            navigate('/profile');
-          }, 1500);
-        } else {
-          setError('Неверный email или пароль. Для тестирования используйте: телефон 89111234567 или test@test.ru, пароль Password123');
-        }
       } else {
         setError('Ошибка сервера. Попробуйте позже.');
       }
@@ -238,7 +209,7 @@ function Login() {
                   <button type="button" className="btn-close" onClick={() => setError('')}></button>
                 </div>
               )}
-              
+
               <div className="alert alert-info mb-4">
                 <h6 className="alert-heading">
                   <i className="bi bi-info-circle me-2"></i>
@@ -253,7 +224,7 @@ function Login() {
                   </div>
                 </div>
               </div>
-              
+
               <form onSubmit={handleSubmit}>
                 <div className="mb-3">
                   <label htmlFor="email" className="form-label fw-semibold">
@@ -276,7 +247,7 @@ function Login() {
                     Введите email или телефон как указано в ТЗ
                   </div>
                 </div>
-                
+
                 <div className="mb-4">
                   <label htmlFor="password" className="form-label fw-semibold">
                     <i className="bi bi-key me-2"></i>
@@ -298,10 +269,10 @@ function Login() {
                     Минимум 7 символов, 1 цифра, 1 строчная и 1 заглавная буква
                   </div>
                 </div>
-                
+
                 <div className="d-grid">
-                  <button 
-                    type="submit" 
+                  <button
+                    type="submit"
                     className="btn btn-primary btn-lg py-3"
                     disabled={isLoading}
                   >
@@ -319,11 +290,11 @@ function Login() {
                   </button>
                 </div>
               </form>
-              
+
               <div className="text-center mt-4 pt-4 border-top">
                 <p className="text-muted mb-3">Еще нет аккаунта?</p>
-                <Link 
-                  to="/register" 
+                <Link
+                  to="/register"
                   className="btn btn-outline-primary w-100"
                   onClick={(e) => {
                     if (isLoading) {
@@ -335,10 +306,10 @@ function Login() {
                   Зарегистрироваться
                 </Link>
               </div>
-              
+
               <div className="text-center mt-3">
-                <Link 
-                  to="/" 
+                <Link
+                  to="/"
                   className="text-decoration-none"
                   onClick={(e) => {
                     if (isLoading) {
@@ -354,7 +325,7 @@ function Login() {
             <div className="card-footer text-center bg-light py-3">
               <p className="mb-0 small text-muted">
                 <i className="bi bi-shield-check me-1"></i>
-                Сервис GET PET BACK — помощь в поиске домашних животных
+                Сервис GET PET BACK --- помощь в поиске домашних животных
               </p>
             </div>
           </div>

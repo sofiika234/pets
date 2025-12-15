@@ -10,7 +10,23 @@ import {
   Row,
   Col
 } from 'react-bootstrap';
-import { authApi, validation } from '../../utils/api';
+import { authApi } from '../../utils/api';
+
+// Валидационные функции
+const validation = {
+  validateName: (value) => {
+    return /^[А-Яа-яЁё\s-]+$/.test(value);
+  },
+  validatePhone: (value) => {
+    return /^\+?[0-9\s\-()]+$/.test(value);
+  },
+  validateEmail: (value) => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  },
+  validatePassword: (value) => {
+    return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{7,}$/.test(value);
+  }
+};
 
 function Register() {
   const navigate = useNavigate();
@@ -18,7 +34,6 @@ function Register() {
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState('');
   const [success, setSuccess] = useState(false);
-
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -28,47 +43,41 @@ function Register() {
     confirm: 0
   });
 
-  // Валидация по ТЗ
   const validateField = (name, value) => {
     const fieldErrors = [];
-
     switch (name) {
       case 'name':
         if (!value.trim()) fieldErrors.push('Имя обязательно');
         else if (!validation.validateName(value))
           fieldErrors.push('Допустимы только кириллица, пробел и дефис');
         break;
-
       case 'phone':
         if (!value.trim()) fieldErrors.push('Телефон обязателен');
-        else if (!validation.validatePhone(value))
+        else if (!validation.validatePhone(value.replace(/\s/g, '')))
           fieldErrors.push('Только цифры и знак +');
         break;
-
       case 'email':
         if (!value.trim()) fieldErrors.push('Email обязателен');
         else if (!validation.validateEmail(value))
           fieldErrors.push('Неверный формат email');
         break;
-
       case 'password':
         if (!value) fieldErrors.push('Пароль обязателен');
         else if (!validation.validatePassword(value))
           fieldErrors.push('Минимум 7 символов, 1 цифра, 1 строчная и 1 заглавная буква');
         break;
-
       case 'password_confirmation':
         if (!value) fieldErrors.push('Подтверждение пароля обязательно');
         else if (value !== formData.password)
           fieldErrors.push('Пароли не совпадают');
         break;
-
       case 'confirm':
         if (!value || value === 0)
           fieldErrors.push('Необходимо согласие на обработку данных');
         break;
+      default:
+        break;
     }
-
     return fieldErrors;
   };
 
@@ -81,11 +90,10 @@ function Register() {
       [name]: fieldValue
     }));
 
-    // Валидация в реальном времени
-    const fieldErrors = validateField(name, fieldValue);
+    // Очищаем ошибку при изменении
     setErrors(prev => ({
       ...prev,
-      [name]: fieldErrors
+      [name]: []
     }));
   };
 
@@ -131,47 +139,89 @@ function Register() {
 
       // Отправка на API
       const response = await authApi.register(registrationData);
+      console.log('Ответ сервера регистрации:', response);
 
-      console.log('Ответ сервера:', response);
-
-      if (response.success || response.status === 204) {
+      // Обработка разных форматов ответа
+      if (response.success || response.status === 204 || response.status === 200) {
         setSuccess(true);
 
-        // Автоматический вход после регистрации
+        // Пробуем автоматически войти
         try {
+          console.log('Попытка автоматического входа...');
           const loginResponse = await authApi.login({
             email: registrationData.email,
             password: registrationData.password
           });
 
-          if (loginResponse.data?.token) {
+          console.log('Ответ сервера входа:', loginResponse);
+
+          if (loginResponse.data?.token || loginResponse.success) {
+            // Сохраняем токен если есть
+            if (loginResponse.data?.token) {
+              localStorage.setItem('authToken', loginResponse.data.token);
+            }
+
             // Сохраняем пользователя в localStorage
-            localStorage.setItem('currentUser', JSON.stringify({
+            const userData = {
               name: registrationData.name,
               email: registrationData.email,
-              phone: registrationData.phone
-            }));
+              phone: registrationData.phone,
+              registrationDate: new Date().toLocaleDateString('ru-RU').replace(/\./g, '-')
+            };
+
+            localStorage.setItem('currentUser', JSON.stringify(userData));
 
             // Перенаправляем в личный кабинет
-            setTimeout(() => navigate('/profile'), 2000);
+            setTimeout(() => navigate('/profile'), 1000);
+          } else {
+            // Если нет токена, перенаправляем на страницу входа
+            setTimeout(() => {
+              navigate('/login', {
+                state: {
+                  message: 'Регистрация успешна! Пожалуйста, войдите в систему.'
+                }
+              });
+            }, 2000);
           }
         } catch (loginError) {
-          console.log('Автоматический вход не удался, перенаправляем на страницу входа');
-          setTimeout(() => navigate('/login'), 2000);
+          console.log('Автоматический вход не удался:', loginError);
+
+          // Регистрация успешна, но вход не удался
+          setSuccess(true);
+          setTimeout(() => {
+            navigate('/login', {
+              state: {
+                message: 'Регистрация успешна! Пожалуйста, войдите в систему.'
+              }
+            });
+          }, 3000);
         }
       } else {
         setServerError('Неизвестная ошибка при регистрации');
       }
-    } catch (error) {
-      console.error('Ошибка регистрации:', error);
 
-      if (error.status === 422 && error.data?.errors) {
-        // Обработка ошибок валидации от сервера
-        const serverErrors = {};
-        Object.entries(error.data.errors).forEach(([field, messages]) => {
-          serverErrors[field] = Array.isArray(messages) ? messages : [messages];
-        });
-        setErrors(serverErrors);
+    } catch (error) {
+      console.error('Полная ошибка регистрации:', error);
+
+      // Обработка ошибок валидации от сервера
+      if (error.status === 422) {
+        if (error.errors) {
+          const serverErrors = {};
+          Object.entries(error.errors).forEach(([field, messages]) => {
+            serverErrors[field] = Array.isArray(messages) ? messages : [messages];
+          });
+          setErrors(serverErrors);
+        }
+        setServerError('Пожалуйста, проверьте введенные данные');
+      } else if (error.status === 401) {
+        setServerError('Ошибка авторизации');
+      } else if (error.status === 409) {
+        setServerError('Пользователь с таким email уже существует');
+      } else if (error.message?.includes('Ошибка обработки ответа сервера')) {
+        // Сервер вернул не-JSON ответ
+        setServerError('Сервер вернул некорректный ответ. Попробуйте позже.');
+      } else if (error.message?.includes('Нет подключения')) {
+        setServerError('Нет подключения к серверу. Проверьте интернет-соединение.');
       } else {
         setServerError(error.message || 'Ошибка при регистрации. Проверьте данные и попробуйте снова.');
       }
@@ -206,7 +256,6 @@ function Register() {
                 Регистрация в сервисе GET PET BACK
               </h3>
             </Card.Header>
-
             <Card.Body className="p-4">
               {serverError && (
                 <Alert variant="danger" dismissible onClose={() => setServerError('')}>
@@ -223,7 +272,7 @@ function Register() {
                 </Alert>
               )}
 
-              <Form onSubmit={handleSubmit}>
+              <Form onSubmit={handleSubmit} noValidate>
                 {/* Имя */}
                 <Form.Group className="mb-3">
                   <Form.Label className="fw-semibold">
@@ -238,6 +287,7 @@ function Register() {
                     placeholder="Введите ваше имя"
                     isInvalid={!!errors.name}
                     disabled={loading || success}
+                    required
                   />
                   {renderError('name')}
                   <Form.Text className="text-muted">
@@ -259,6 +309,7 @@ function Register() {
                     placeholder="+79111234567"
                     isInvalid={!!errors.phone}
                     disabled={loading || success}
+                    required
                   />
                   {renderError('phone')}
                   <Form.Text className="text-muted">
@@ -280,6 +331,7 @@ function Register() {
                     placeholder="user@example.com"
                     isInvalid={!!errors.email}
                     disabled={loading || success}
+                    required
                   />
                   {renderError('email')}
                   <Form.Text className="text-muted">
@@ -301,6 +353,7 @@ function Register() {
                     placeholder="Введите пароль"
                     isInvalid={!!errors.password}
                     disabled={loading || success}
+                    required
                   />
                   {renderError('password')}
                   <Form.Text className="text-muted">
@@ -322,6 +375,7 @@ function Register() {
                     placeholder="Повторите пароль"
                     isInvalid={!!errors.password_confirmation}
                     disabled={loading || success}
+                    required
                   />
                   {renderError('password_confirmation')}
                 </Form.Group>
@@ -341,6 +395,7 @@ function Register() {
                     onChange={handleChange}
                     isInvalid={!!errors.confirm}
                     disabled={loading || success}
+                    required
                   />
                   {renderError('confirm')}
                 </Form.Group>
@@ -366,7 +421,6 @@ function Register() {
                       </>
                     )}
                   </Button>
-
                   <Button
                     variant="outline-secondary"
                     as={Link}
@@ -380,7 +434,6 @@ function Register() {
                 </div>
               </Form>
             </Card.Body>
-
             <Card.Footer className="text-center bg-light py-3">
               <p className="mb-0 text-muted small">
                 <i className="bi bi-shield-check me-1"></i>

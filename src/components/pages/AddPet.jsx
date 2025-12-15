@@ -12,11 +12,11 @@ import {
   Image,
   Badge
 } from 'react-bootstrap';
-import { petsApi, authApi, validation } from '../../utils/api';
+import { petsApi, authApi } from '../../utils/api';
 
 function AddPet() {
   const navigate = useNavigate();
-  
+
   // Состояние формы
   const [formData, setFormData] = useState({
     name: '',
@@ -45,134 +45,134 @@ function AddPet() {
     photo2: null,
     photo3: null
   });
-  const [loadingUser, setLoadingUser] = useState(true);
 
   // Загрузка данных пользователя при монтировании
   useEffect(() => {
-    const loadUserData = async () => {
-      const token = localStorage.getItem('authToken');
-      
-      if (token) {
-        setIsAuthenticated(true);
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      setIsAuthenticated(true);
+      // Загружаем данные пользователя из localStorage
+      const savedUser = localStorage.getItem('currentUser');
+      if (savedUser) {
         try {
-          // Пробуем загрузить данные пользователя
-          const response = await authApi.getUser();
-          
-          if (response && (response.data || response.success !== false)) {
-            let userData;
-            
-            // Обработка разных форматов ответа
-            if (response.data?.user) {
-              userData = Array.isArray(response.data.user) 
-                ? response.data.user[0] 
-                : response.data.user;
-            } else if (response.data) {
-              userData = response.data;
-            } else if (response.user) {
-              userData = Array.isArray(response.user) ? response.user[0] : response.user;
-            }
-
-            if (userData && userData.name) {
-              setUserData(userData);
-              
-              // Заполняем форму данными пользователя
-              setFormData(prev => ({
-                ...prev,
-                name: userData.name || '',
-                phone: userData.phone || '',
-                email: userData.email || ''
-              }));
-              
-              localStorage.setItem('currentUser', JSON.stringify(userData));
-            }
-          }
+          const parsedUser = JSON.parse(savedUser);
+          setUserData(parsedUser);
+          setFormData(prev => ({
+            ...prev,
+            name: parsedUser.name || '',
+            phone: parsedUser.phone || '',
+            email: parsedUser.email || ''
+          }));
         } catch (error) {
-          console.warn('Ошибка загрузки данных пользователя, используем данные из localStorage:', error.message);
-          const savedUser = localStorage.getItem('currentUser');
-          if (savedUser) {
-            try {
-              const parsedUser = JSON.parse(savedUser);
-              setUserData(parsedUser);
-              setFormData(prev => ({
-                ...prev,
-                name: parsedUser.name || '',
-                phone: parsedUser.phone || '',
-                email: parsedUser.email || ''
-              }));
-            } catch (parseError) {
-              console.error('Ошибка парсинга сохраненного пользователя:', parseError);
-            }
-          }
+          console.error('Error parsing saved user:', error);
         }
-      } else {
-        setIsAuthenticated(false);
       }
-      
-      setLoadingUser(false);
-    };
-
-    loadUserData();
+    }
   }, []);
 
-  // Валидация формы на стороне клиента согласно ТЗ
+  // Валидация формы
   const validateForm = () => {
     const newErrors = {};
-    
+
+    console.log('=== ВАЛИДАЦИЯ ФОРМЫ ===');
+    console.log('Данные формы:', formData);
+
     // Проверка имени
     if (!formData.name.trim()) {
       newErrors.name = 'Имя обязательно для заполнения';
-    } else if (!validation.validateName(formData.name)) {
+      console.log('Ошибка имени: поле пустое');
+    } else if (!/^[а-яА-ЯёЁ\s\-]+$/.test(formData.name)) {
       newErrors.name = 'Допустимы только кириллические буквы, пробелы и дефисы';
+      console.log('Ошибка имени: недопустимые символы');
     }
 
     // Проверка телефона
     if (!formData.phone.trim()) {
       newErrors.phone = 'Телефон обязателен для заполнения';
-    } else if (!validation.validatePhone(formData.phone)) {
-      newErrors.phone = 'Только цифры, можно начинать с +';
+      console.log('Ошибка телефона: поле пустое');
+    } else {
+      // Очищаем телефон от лишних символов
+      const cleanedPhone = formData.phone.replace(/[\s\-\(\)]/g, '');
+      console.log('Очищенный телефон:', cleanedPhone);
+
+      if (!/^(\+7|8)[0-9]{10}$/.test(cleanedPhone)) {
+        newErrors.phone = 'Формат: +7XXXXXXXXXX или 8XXXXXXXXXX (10 цифр)';
+        console.log('Ошибка телефона: неверный формат');
+      }
     }
 
     // Проверка email
     if (!formData.email.trim()) {
       newErrors.email = 'Email обязателен для заполнения';
-    } else if (!validation.validateEmail(formData.email)) {
+      console.log('Ошибка email: поле пустое');
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       newErrors.email = 'Введите корректный email адрес';
+      console.log('Ошибка email: неверный формат');
     }
 
-    // Поля объявления
+    // Проверка вида животного
     if (!formData.kind.trim()) {
       newErrors.kind = 'Вид животного обязателен для заполнения';
+      console.log('Ошибка вида животного: не выбрано');
     }
 
+    // Проверка района
     if (!formData.district.trim()) {
       newErrors.district = 'Район обязателен для заполнения';
+      console.log('Ошибка района: не выбран');
     }
 
+    // Проверка описания
     if (!formData.description.trim()) {
       newErrors.description = 'Описание обязательно для заполнения';
+      console.log('Ошибка описания: поле пустое');
     }
 
+    // Проверка фото
     if (!formData.photo1) {
       newErrors.photo1 = 'Фото 1 обязательно для загрузки';
-    } else if (!formData.photo1.type.includes('png') && !formData.photo1.name.toLowerCase().endsWith('.png')) {
-      newErrors.photo1 = 'Фото должно быть в формате PNG';
+      console.log('Ошибка фото1: не загружено');
+    } else {
+      console.log('Фото1 проверка:', {
+        type: formData.photo1.type,
+        name: formData.photo1.name,
+        size: formData.photo1.size
+      });
+
+      const isPNG = formData.photo1.type === 'image/png' ||
+                   formData.photo1.name.toLowerCase().endsWith('.png');
+
+      if (!isPNG) {
+        newErrors.photo1 = 'Фото должно быть в формате PNG';
+        console.log('Ошибка фото1: не PNG формат');
+      }
     }
 
     // Проверка дополнительных фото
-    if (formData.photo2 && !formData.photo2.type.includes('png') && !formData.photo2.name.toLowerCase().endsWith('.png')) {
-      newErrors.photo2 = 'Фото должно быть в формате PNG';
+    if (formData.photo2) {
+      const isPNG = formData.photo2.type === 'image/png' ||
+                   formData.photo2.name.toLowerCase().endsWith('.png');
+      if (!isPNG) {
+        newErrors.photo2 = 'Фото должно быть в формате PNG';
+      }
     }
 
-    if (formData.photo3 && !formData.photo3.type.includes('png') && !formData.photo3.name.toLowerCase().endsWith('.png')) {
-      newErrors.photo3 = 'Фото должно быть в формате PNG';
+    if (formData.photo3) {
+      const isPNG = formData.photo3.type === 'image/png' ||
+                   formData.photo3.name.toLowerCase().endsWith('.png');
+      if (!isPNG) {
+        newErrors.photo3 = 'Фото должно быть в формате PNG';
+      }
     }
 
-    // Проверка пароля (только если выбрана регистрация)
-    if (formData.register === 1 && !isAuthenticated) {
+    // Проверка пароля при регистрации
+    if (formData.register === 1) {
       if (!formData.password) {
         newErrors.password = 'Пароль обязателен для регистрации';
-      } else if (!validation.validatePassword(formData.password)) {
-        newErrors.password = 'Пароль должен содержать не менее 7 символов, включая 1 заглавную букву, 1 строчную букву и 1 цифру';
+      } else if (formData.password.length < 7) {
+        newErrors.password = 'Пароль должен содержать не менее 7 символов';
+      } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(formData.password)) {
+        newErrors.password = 'Пароль должен содержать минимум 1 заглавную букву, 1 строчную букву и 1 цифру';
       }
 
       if (!formData.password_confirmation) {
@@ -182,9 +182,15 @@ function AddPet() {
       }
     }
 
+    // Проверка согласия
     if (!formData.confirm) {
       newErrors.confirm = 'Необходимо согласие на обработку персональных данных';
+      console.log('Ошибка согласия: не отмечено');
     }
+
+    console.log('Найдено ошибок:', Object.keys(newErrors).length);
+    console.log('Ошибки:', newErrors);
+    console.log('=== КОНЕЦ ВАЛИДАЦИИ ===');
 
     return newErrors;
   };
@@ -192,15 +198,19 @@ function AddPet() {
   // Обработчик изменения полей
   const handleChange = useCallback((e) => {
     const { name, value, type, checked, files } = e.target;
-    
+
+    console.log(`Изменение поля ${name}:`, { value, type, checked, files });
+
     if (type === 'checkbox') {
       const newValue = checked ? 1 : 0;
+      console.log(`Checkbox ${name}: ${checked} -> ${newValue}`);
+
       setFormData(prev => ({
         ...prev,
         [name]: newValue
       }));
-      
-      // Сброс полей пароля при отмене регистрации
+
+      // Сброс паролей при отмене регистрации
       if (name === 'register' && !checked) {
         setFormData(prev => ({
           ...prev,
@@ -210,10 +220,15 @@ function AddPet() {
       }
     } else if (type === 'file' && files && files[0]) {
       const file = files[0];
-      
+      console.log(`Файл ${name}:`, {
+        name: file.name,
+        type: file.type,
+        size: file.size
+      });
+
       // Проверка PNG формата
-      const isPNG = file.type.includes('png') || file.name.toLowerCase().endsWith('.png');
-      
+      const isPNG = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png');
+
       if (!isPNG) {
         setErrors(prev => ({
           ...prev,
@@ -221,9 +236,9 @@ function AddPet() {
         }));
         return;
       }
-      
+
       setErrors(prev => ({ ...prev, [name]: '' }));
-      
+
       // Создание превью
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -233,17 +248,23 @@ function AddPet() {
         }));
       };
       reader.readAsDataURL(file);
-      
+
       setFormData(prev => ({
         ...prev,
         [name]: file
       }));
     } else {
+      // Для авторизованных пользователей запрещаем изменение контактных данных
+      if (isAuthenticated && (name === 'name' || name === 'phone' || name === 'email')) {
+        console.log(`Поле ${name} заблокировано для авторизованного пользователя`);
+        return;
+      }
+
       setFormData(prev => ({
         ...prev,
         [name]: value
       }));
-      
+
       if (errors[name]) {
         setErrors(prev => ({ ...prev, [name]: '' }));
       }
@@ -253,18 +274,15 @@ function AddPet() {
   // Отправка формы
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    console.log('Начало отправки формы...');
-    console.log('Данные формы:', formData);
-    console.log('Авторизован:', isAuthenticated);
-    
+
+    console.log('=== НАЧАЛО ОТПРАВКИ ФОРМЫ ===');
+
     // Валидация
     const validationErrors = validateForm();
-    console.log('Ошибки валидации:', validationErrors);
-    
     if (Object.keys(validationErrors).length > 0) {
+      console.log('Валидация не пройдена, ошибки:', validationErrors);
       setErrors(validationErrors);
-      
+
       // Прокрутка к первой ошибке
       const firstErrorKey = Object.keys(validationErrors)[0];
       const errorElement = document.querySelector(`[name="${firstErrorKey}"]`);
@@ -272,135 +290,168 @@ function AddPet() {
         errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
         errorElement.focus();
       }
-      
+
       return;
     }
-    
+
+    console.log('Валидация пройдена успешно');
+
     setLoading(true);
     setErrors({});
     setSuccessMessage('');
-    
+
     try {
-      // Создание FormData согласно ТЗ
+      // Создание FormData
       const formDataToSend = new FormData();
-      
-      console.log('Формируем FormData...');
-      
-      // Контактные данные (обязательны для всех согласно ТЗ)
+
+      console.log('=== ФОРМИРОВАНИЕ FORMDATA ===');
+
+      // Контактные данные
       formDataToSend.append('name', formData.name.trim());
+      console.log('Добавлено name:', formData.name.trim());
+
       formDataToSend.append('phone', formData.phone.trim());
+      console.log('Добавлено phone:', formData.phone.trim());
+
       formDataToSend.append('email', formData.email.trim());
-      
-      // Обязательные поля объявления
+      console.log('Добавлено email:', formData.email.trim());
+
+      // Данные животного
       formDataToSend.append('kind', formData.kind.trim());
+      console.log('Добавлено kind:', formData.kind.trim());
+
       formDataToSend.append('district', formData.district.trim());
+      console.log('Добавлено district:', formData.district.trim());
+
       formDataToSend.append('description', formData.description.trim());
-      
-      // Опциональные поля
+      console.log('Добавлено description:', formData.description.trim());
+
+      // Клеймо (необязательное)
       if (formData.mark.trim()) {
         formDataToSend.append('mark', formData.mark.trim());
+        console.log('Добавлено mark:', formData.mark.trim());
       }
-      
+
       // Фотографии
       formDataToSend.append('photo1', formData.photo1);
+      console.log('Добавлено photo1:', formData.photo1.name);
+
       if (formData.photo2) {
         formDataToSend.append('photo2', formData.photo2);
+        console.log('Добавлено photo2:', formData.photo2.name);
       }
+
       if (formData.photo3) {
         formDataToSend.append('photo3', formData.photo3);
+        console.log('Добавлено photo3:', formData.photo3.name);
       }
-      
-      // Дополнительные поля (обязательные checkbox)
+
+      // Checkbox значения как строки "1" или "0"
       formDataToSend.append('confirm', formData.confirm.toString());
+      console.log('Добавлено confirm:', formData.confirm.toString());
+
       formDataToSend.append('register', formData.register.toString());
-      
-      // Пароль только если выбрана регистрация
-      if (formData.register === 1 && !isAuthenticated) {
+      console.log('Добавлено register:', formData.register.toString());
+
+      // Пароли при регистрации
+      if (formData.register === 1) {
         formDataToSend.append('password', formData.password);
+        console.log('Добавлено password:', '[скрыто]');
+
         formDataToSend.append('password_confirmation', formData.password_confirmation);
+        console.log('Добавлено password_confirmation:', '[скрыто]');
       }
-      
+
       // Логирование содержимого FormData
-      console.log('Содержимое FormData:');
+      console.log('=== СОДЕРЖАНИЕ FORMDATA ===');
       for (let [key, value] of formDataToSend.entries()) {
         if (value instanceof File) {
-          console.log(`${key}: [File] ${value.name}, ${value.type}, ${value.size} bytes`);
+          console.log(`${key}: [File] ${value.name}, ${value.type}, ${value.size} байт`);
         } else {
           console.log(`${key}: ${value}`);
         }
       }
-      
-      console.log('Отправка запроса на сервер...');
-      
-      // Отправка запроса согласно ТЗ: POST {host}/api/pets
+      console.log('=== КОНЕЦ FORMDATA ===');
+
+      console.log('Отправка запроса на /api/pets...');
+
+      // Отправка запроса
       const response = await petsApi.addPet(formDataToSend);
-      
+
       console.log('Ответ сервера:', response);
-      
+
       if (response.status === 200 || response.status === 201 || response.status === 204) {
-        // Успешное добавление
-        const successMsg = 'Объявление успешно добавлено!';
-        setSuccessMessage(successMsg);
-        
-        // Если пользователь зарегистрировался
+        console.log('Успешная отправка!');
+        setSuccessMessage('Объявление успешно добавлено!');
+
+        // Если регистрация прошла успешно
         if (formData.register === 1 && response.data?.token) {
           localStorage.setItem('authToken', response.data.token);
           setIsAuthenticated(true);
-          
-          setTimeout(() => {
-            navigate('/profile');
-          }, 2000);
-        } else if (isAuthenticated) {
-          setTimeout(() => {
-            navigate('/profile');
-          }, 2000);
-        } else {
-          setTimeout(() => {
-            navigate('/');
-          }, 2000);
+
+          // Загружаем данные пользователя
+          try {
+            await authApi.getUser();
+          } catch (error) {
+            console.error('Ошибка загрузки данных пользователя:', error);
+          }
         }
-      } else {
-        throw new Error('Не удалось добавить объявление');
+
+        // Перенаправление через 2 секунды
+        setTimeout(() => {
+          if (isAuthenticated || (formData.register === 1 && response.data?.token)) {
+            navigate('/profile');
+          } else {
+            navigate('/');
+          }
+        }, 2000);
       }
-      
+
     } catch (error) {
-      console.error('Ошибка при добавлении объявления:', error);
-      console.error('Детали ошибки:', {
-        status: error.status,
-        message: error.message,
-        errors: error.errors,
-        data: error.data
-      });
-      
+      console.error('=== ОШИБКА ПРИ ОТПРАВКЕ ===');
+      console.error('Тип ошибки:', error.constructor.name);
+      console.error('Сообщение:', error.message);
+      console.error('Статус:', error.status);
+      console.error('Код:', error.code);
+      console.error('Данные ошибки:', error.data);
+      console.error('Ошибки валидации:', error.errors);
+
       // Обработка ошибок валидации
       if (error.status === 422) {
         const serverErrors = error.errors || error.data?.error?.errors || {};
-        console.log('Ошибки валидации с сервера:', serverErrors);
-        
+        console.log('Ошибки с сервера:', serverErrors);
+
         setErrors(serverErrors);
-        
-        // Формируем сообщение об ошибках
-        const errorMessages = [];
+
+        // Формируем понятное сообщение об ошибках
+        let errorMessage = 'Ошибки при заполнении формы:\n\n';
+        let hasErrors = false;
+
         for (const [field, messages] of Object.entries(serverErrors)) {
           if (Array.isArray(messages)) {
-            errorMessages.push(`${field}: ${messages.join(', ')}`);
+            errorMessage += `${field}: ${messages.join(', ')}\n`;
+            hasErrors = true;
           } else if (typeof messages === 'string') {
-            errorMessages.push(`${field}: ${messages}`);
+            errorMessage += `${field}: ${messages}\n`;
+            hasErrors = true;
           }
         }
-        
-        if (errorMessages.length > 0) {
-          alert(`Ошибки при заполнении формы:\n\n${errorMessages.join('\n')}`);
+
+        if (hasErrors) {
+          alert(errorMessage);
         } else {
-          alert('Ошибка при обработке данных. Проверьте правильность заполнения всех полей.');
+          alert('Ошибка валидации. Пожалуйста, проверьте правильность всех полей.');
         }
       } else if (error.message.includes('Failed to fetch') || error.message.includes('Network Error')) {
         alert('Ошибка соединения с сервером. Проверьте интернет-соединение и попробуйте снова.');
+      } else if (error.message.includes('fetch')) {
+        alert('Не удалось подключиться к серверу. Возможно, проблема с сетью или сервер недоступен.');
       } else {
-        alert(`Ошибка: ${error.message || 'Не удалось добавить объявление'}`);
+        alert(`Ошибка: ${error.message || 'Неизвестная ошибка'}`);
       }
     } finally {
       setLoading(false);
+      console.log('=== ЗАВЕРШЕНИЕ ОТПРАВКИ ===');
     }
   };
 
@@ -409,10 +460,10 @@ function AddPet() {
     if (imagePreviews[name]) {
       return (
         <div className="mt-2">
-          <Image 
-            src={imagePreviews[name]} 
-            alt="Предпросмотр" 
-            thumbnail 
+          <Image
+            src={imagePreviews[name]}
+            alt="Предпросмотр"
+            thumbnail
             style={{ maxWidth: '200px', maxHeight: '200px' }}
           />
           <Button
@@ -433,22 +484,10 @@ function AddPet() {
     return null;
   };
 
-  // Если загружается информация о пользователе
-  if (loadingUser && isAuthenticated) {
-    return (
-      <Container className="py-5">
-        <div className="text-center">
-          <Spinner animation="border" variant="primary" />
-          <p className="mt-3">Загрузка данных пользователя...</p>
-        </div>
-      </Container>
-    );
-  }
-
-  // Список районов согласно ТЗ
+  // Районы согласно ТЗ
   const districts = [
     'Центральный',
-    'Василеостровский', 
+    'Василеостровский',
     'Адмиралтейский',
     'Петроградский',
     'Московский',
@@ -470,30 +509,30 @@ function AddPet() {
               </h2>
               <small>Все поля, отмеченные *, обязательны для заполнения</small>
             </Card.Header>
-            
+
             <Card.Body>
               {successMessage && (
                 <Alert variant="success" className="mb-4">
                   <i className="bi bi-check-circle me-2"></i>
                   {successMessage}
                   <div className="mt-2">
-                    {formData.register === 1 && !isAuthenticated ? 
+                    {formData.register === 1 ?
                       'Вы будете перенаправлены в личный кабинет...' :
-                      isAuthenticated ? 
+                      isAuthenticated ?
                       'Вы будете перенаправлены в профиль...' :
                       'Вы будете перенаправлены на главную страницу...'}
                   </div>
                 </Alert>
               )}
-              
+
               {isAuthenticated && (
                 <Alert variant="info" className="mb-4">
                   <i className="bi bi-info-circle me-2"></i>
                   Вы авторизованы. Поля "Имя", "Телефон" и "Email" заполнены автоматически.
                 </Alert>
               )}
-              
-              <Form onSubmit={handleSubmit} noValidate encType="multipart/form-data">
+
+              <Form onSubmit={handleSubmit} noValidate>
                 {/* Информация о контактах */}
                 <Card className="mb-4">
                   <Card.Header>
@@ -501,7 +540,6 @@ function AddPet() {
                       <i className="bi bi-person-lines-fill me-2"></i>
                       Ваши контактные данные
                     </h5>
-                    <small className="text-muted">Эти данные будут доступны владельцам животных</small>
                   </Card.Header>
                   <Card.Body>
                     <Row>
@@ -529,7 +567,7 @@ function AddPet() {
                           </Form.Text>
                         </Form.Group>
                       </Col>
-                      
+
                       <Col md={6}>
                         <Form.Group className="mb-3">
                           <Form.Label>
@@ -541,7 +579,7 @@ function AddPet() {
                             name="phone"
                             value={formData.phone}
                             onChange={handleChange}
-                            placeholder="+79111234567 или 89111234567"
+                            placeholder="+79111234567"
                             isInvalid={!!errors.phone}
                             required
                             readOnly={isAuthenticated}
@@ -550,11 +588,11 @@ function AddPet() {
                             {errors.phone}
                           </Form.Control.Feedback>
                           <Form.Text className="text-muted">
-                            Только цифры, можно начинать с +7 или 8
+                            Формат: +7XXXXXXXXXX
                           </Form.Text>
                         </Form.Group>
                       </Col>
-                      
+
                       <Col md={12}>
                         <Form.Group className="mb-3">
                           <Form.Label>
@@ -597,7 +635,7 @@ function AddPet() {
                         Получите доступ к личному кабинету для управления объявлениями
                       </small>
                     </Card.Header>
-                    
+
                     {formData.register === 1 && (
                       <Card.Body className="bg-light">
                         <Row>
@@ -621,7 +659,7 @@ function AddPet() {
                               </Form.Text>
                             </Form.Group>
                           </Col>
-                          
+
                           <Col md={6}>
                             <Form.Group className="mb-3">
                               <Form.Label>Подтверждение пароля *</Form.Label>
@@ -680,7 +718,7 @@ function AddPet() {
                           </Form.Control.Feedback>
                         </Form.Group>
                       </Col>
-                      
+
                       <Col md={6}>
                         <Form.Group className="mb-3">
                           <Form.Label>Район *</Form.Label>
@@ -701,7 +739,7 @@ function AddPet() {
                           </Form.Control.Feedback>
                         </Form.Group>
                       </Col>
-                      
+
                       <Col md={12}>
                         <Form.Group className="mb-3">
                           <Form.Label>Клеймо (необязательно)</Form.Label>
@@ -710,14 +748,14 @@ function AddPet() {
                             name="mark"
                             value={formData.mark}
                             onChange={handleChange}
-                            placeholder="VL-0214 или другая идентификация"
+                            placeholder="VL-0214"
                           />
                           <Form.Text className="text-muted">
-                            Если у животного есть клеймо, татуировка или чип
+                            Если у животного есть клеймо или татуировка
                           </Form.Text>
                         </Form.Group>
                       </Col>
-                      
+
                       <Col md={12}>
                         <Form.Group className="mb-3">
                           <Form.Label>Описание *</Form.Label>
@@ -727,7 +765,7 @@ function AddPet() {
                             name="description"
                             value={formData.description}
                             onChange={handleChange}
-                            placeholder="Опишите животное: пол, примерный возраст, порода, окрас, особые приметы, где и когда найдено, поведение..."
+                            placeholder="Опишите животное..."
                             isInvalid={!!errors.description}
                             required
                           />
@@ -748,7 +786,7 @@ function AddPet() {
                   <Card.Header>
                     <h5 className="mb-0">
                       <i className="bi bi-images me-2"></i>
-                      Фотографии животного
+                      Фотографии
                     </h5>
                     <small className="text-muted">Только формат PNG</small>
                   </Card.Header>
@@ -763,7 +801,7 @@ function AddPet() {
                           <Form.Control
                             type="file"
                             name="photo1"
-                            accept=".png"
+                            accept=".png,image/png"
                             onChange={handleChange}
                             isInvalid={!!errors.photo1}
                             required
@@ -773,18 +811,18 @@ function AddPet() {
                           </Form.Control.Feedback>
                           {renderImagePreview('photo1')}
                           <Form.Text className="text-muted">
-                            Четкое фото животного крупным планом
+                            Четкое фото животного
                           </Form.Text>
                         </Form.Group>
                       </Col>
-                      
+
                       <Col md={4}>
                         <Form.Group className="mb-3">
                           <Form.Label>Фото 2 (необязательно)</Form.Label>
                           <Form.Control
                             type="file"
                             name="photo2"
-                            accept=".png"
+                            accept=".png,image/png"
                             onChange={handleChange}
                             isInvalid={!!errors.photo2}
                           />
@@ -793,18 +831,18 @@ function AddPet() {
                           </Form.Control.Feedback>
                           {renderImagePreview('photo2')}
                           <Form.Text className="text-muted">
-                            Дополнительное фото с другого ракурса
+                            Дополнительное фото
                           </Form.Text>
                         </Form.Group>
                       </Col>
-                      
+
                       <Col md={4}>
                         <Form.Group className="mb-3">
                           <Form.Label>Фото 3 (необязательно)</Form.Label>
                           <Form.Control
                             type="file"
                             name="photo3"
-                            accept=".png"
+                            accept=".png,image/png"
                             onChange={handleChange}
                             isInvalid={!!errors.photo3}
                           />
@@ -813,16 +851,11 @@ function AddPet() {
                           </Form.Control.Feedback>
                           {renderImagePreview('photo3')}
                           <Form.Text className="text-muted">
-                            Фото особых примет или клейма
+                            Фото особых примет
                           </Form.Text>
                         </Form.Group>
                       </Col>
                     </Row>
-                    
-                    <Alert variant="info" className="mt-3">
-                      <i className="bi bi-info-circle me-2"></i>
-                      Загружайте четкие, хорошо освещенные фотографии в формате PNG.
-                    </Alert>
                   </Card.Body>
                 </Card>
 
@@ -832,7 +865,7 @@ function AddPet() {
                     <Form.Check
                       type="checkbox"
                       name="confirm"
-                      label="Я даю согласие на обработку моих персональных данных в соответствии с политикой конфиденциальности"
+                      label="Я даю согласие на обработку моих персональных данных"
                       checked={formData.confirm === 1}
                       onChange={handleChange}
                       isInvalid={!!errors.confirm}
@@ -855,13 +888,15 @@ function AddPet() {
                     <i className="bi bi-arrow-left me-2"></i>
                     Назад
                   </Button>
-                  
+
                   <div className="d-flex gap-3">
                     <Button
                       variant="outline-primary"
                       onClick={() => {
-                        // Сброс формы
-                        const resetData = {
+                        setFormData({
+                          name: isAuthenticated && userData ? userData.name || '' : '',
+                          phone: isAuthenticated && userData ? userData.phone || '' : '',
+                          email: isAuthenticated && userData ? userData.email || '' : '',
                           kind: '',
                           district: '',
                           description: '',
@@ -873,19 +908,7 @@ function AddPet() {
                           photo1: null,
                           photo2: null,
                           photo3: null
-                        };
-                        
-                        // Сохраняем контактные данные
-                        if (isAuthenticated && userData) {
-                          resetData.name = userData.name || '';
-                          resetData.phone = userData.phone || '';
-                          resetData.email = userData.email || '';
-                        }
-                        
-                        setFormData(prev => ({
-                          ...prev,
-                          ...resetData
-                        }));
+                        });
                         setErrors({});
                         setImagePreviews({
                           photo1: null,
@@ -899,7 +922,7 @@ function AddPet() {
                       <i className="bi bi-eraser me-2"></i>
                       Очистить форму
                     </Button>
-                    
+
                     <Button
                       variant="primary"
                       type="submit"
@@ -922,7 +945,7 @@ function AddPet() {
                 </div>
               </Form>
             </Card.Body>
-            
+
             <Card.Footer className="text-muted small">
               <div className="d-flex justify-content-between align-items-center">
                 <span>
@@ -930,8 +953,7 @@ function AddPet() {
                   Ваши данные защищены
                 </span>
                 <span>
-                  <i className="bi bi-asterisk text-danger me-1"></i>
-                  - обязательные поля
+                  * - обязательные поля
                 </span>
               </div>
             </Card.Footer>
