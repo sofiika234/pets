@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Carousel, Card, Button, Spinner } from 'react-bootstrap';
-import { petsApi, api } from '../../utils/api';
+import { petsApi, imageUtils } from '../../utils/api';
 
 function Main() {
     const navigate = useNavigate();
@@ -22,49 +22,30 @@ function Main() {
                     console.log('Slider response:', sliderResponse);
                     
                     // Обрабатываем разные форматы ответа
-                    let sliderData = sliderResponse;
+                    let sliderData = sliderResponse?.data || sliderResponse;
                     
-                    // Если ответ имеет структуру {data: {...}}
-                    if (sliderResponse && sliderResponse.data) {
-                        sliderData = sliderResponse.data;
-                    }
-                    
-                    // Проверяем наличие pets или orders в ответе
-                    const pets = sliderData.pets || sliderData.orders || sliderData;
-                    
-                    if (pets && Array.isArray(pets) && pets.length > 0) {
-                        const formattedStories = pets.slice(0, 5).map(pet => ({
-                            id: pet.id || Math.random(),
-                            image: getCorrectImageUrl(pet.image || pet.photos || pet.photo),
-                            title: pet.kind || pet.type || 'Найдено животное',
-                            description: pet.description || 'Питомец нашел дом',
-                            date: pet.date || pet.created_at || new Date().toISOString().split('T')[0]
-                        }));
-                        setStories(formattedStories);
+                    if (sliderData && sliderData.success !== false) {
+                        // Проверяем наличие pets или orders в ответе
+                        const pets = sliderData.pets || sliderData.orders || (Array.isArray(sliderData) ? sliderData : []);
+                        
+                        if (pets && Array.isArray(pets) && pets.length > 0) {
+                            const formattedStories = pets.slice(0, 5).map(pet => ({
+                                id: pet.id || Math.random(),
+                                image: getCorrectImageUrl(pet.image || pet.photos || pet.photo),
+                                title: pet.kind || pet.type || 'Найдено животное',
+                                description: pet.description || 'Питомец нашел дом',
+                                date: pet.date || pet.created_at || new Date().toISOString().split('T')[0]
+                            }));
+                            setStories(formattedStories);
+                        } else {
+                            setStories([getDefaultStory()]);
+                        }
                     } else {
-                        // Если слайдер пустой, используем дефолтные данные
-                        setStories([
-                            {
-                                id: 1,
-                                image: getDefaultImage(),
-                                title: 'Истории успеха',
-                                description: 'Питомцы, которые обрели новый дом благодаря нашему сервису',
-                                date: '2024-01-15'
-                            }
-                        ]);
+                        setStories([getDefaultStory()]);
                     }
                 } catch (sliderError) {
                     console.log('Слайдер ошибка:', sliderError);
-                    // Дефолтные данные для слайдера
-                    setStories([
-                        {
-                            id: 1,
-                            image: getDefaultImage(),
-                            title: 'Истории успеха',
-                            description: 'Питомцы, которые обрели новый дом благодаря нашему сервису',
-                            date: '2024-01-15'
-                        }
-                    ]);
+                    setStories([getDefaultStory()]);
                 }
 
                 // Загрузка последних животных
@@ -73,100 +54,40 @@ function Main() {
                     console.log('Recent pets response:', petsResponse);
                     
                     // Обрабатываем разные форматы ответа
-                    let petsData = petsResponse;
+                    let petsData = petsResponse?.data || petsResponse;
                     
-                    // Если ответ имеет структуру {data: {...}}
-                    if (petsResponse && petsResponse.data) {
-                        petsData = petsResponse.data;
-                    }
-                    
-                    // Проверяем наличие orders или pets в ответе
-                    const orders = petsData.orders || petsData.pets || petsData;
-                    
-                    if (orders && Array.isArray(orders)) {
-                        const formattedPets = orders.slice(0, 6).map(order => ({
-                            id: order.id || Math.random(),
-                            name: order.kind || order.type || 'Без имени',
-                            date: order.date || order.created_at || new Date().toISOString().split('T')[0],
-                            type: order.kind || order.type || 'Неизвестно',
-                            district: order.district || order.location || 'Не указан',
-                            image: getCorrectImageUrl(order.photos || order.photo || order.image),
-                            description: order.description || 'Нет описания',
-                            phone: order.phone || '',
-                            email: order.email || '',
-                            status: order.status || 'active'
-                        }));
-                        setRecentPets(formattedPets);
+                    if (petsData && petsData.success !== false) {
+                        // Проверяем наличие orders или pets в ответе
+                        const orders = petsData.orders || petsData.pets || (Array.isArray(petsData) ? petsData : []);
+                        
+                        if (orders && Array.isArray(orders)) {
+                            const formattedPets = orders.slice(0, 6).map(order => ({
+                                id: order.id || Math.random(),
+                                name: order.kind || order.type || 'Без имени',
+                                date: order.date || order.created_at || new Date().toISOString().split('T')[0],
+                                type: order.kind || order.type || 'Неизвестно',
+                                district: order.district || order.location || 'Не указан',
+                                image: getCorrectImageUrl(order.photos || order.photo || order.image),
+                                description: order.description || 'Нет описания',
+                                phone: order.phone || '',
+                                email: order.email || '',
+                                status: order.status || 'active'
+                            }));
+                            setRecentPets(formattedPets);
+                        } else {
+                            setRecentPets([getDefaultPet()]);
+                        }
                     } else {
-                        // Если нет данных, используем дефолтные
-                        setRecentPets([
-                            { 
-                                id: 1, 
-                                name: 'Собака', 
-                                date: '2024-01-15', 
-                                type: 'Собака', 
-                                district: 'Центральный', 
-                                image: getDefaultImage(),
-                                description: 'Найдена дружелюбная собака в центре города' 
-                            },
-                            { 
-                                id: 2, 
-                                name: 'Кошка', 
-                                date: '2024-01-14', 
-                                type: 'Кошка', 
-                                district: 'Северный', 
-                                image: getDefaultImage(),
-                                description: 'Котенок ищет дом' 
-                            }
-                        ]);
+                        setRecentPets([getDefaultPet()]);
                     }
                 } catch (petsError) {
                     console.log('Recent pets ошибка:', petsError);
-                    // Дефолтные данные для карточек
-                    setRecentPets([
-                        { 
-                            id: 1, 
-                            name: 'Собака', 
-                            date: '2024-01-15', 
-                            type: 'Собака', 
-                            district: 'Центральный', 
-                            image: getDefaultImage(),
-                            description: 'Найдена дружелюбная собака в центре города' 
-                        },
-                        { 
-                            id: 2, 
-                            name: 'Кошка', 
-                            date: '2024-01-14', 
-                            type: 'Кошка', 
-                            district: 'Северный', 
-                            image: getDefaultImage(),
-                            description: 'Котенок ищет дом' 
-                        }
-                    ]);
+                    setRecentPets([getDefaultPet()]);
                 }
             } catch (error) {
                 console.error('Общая ошибка загрузки:', error);
-                // Моковые данные при ошибке
-                setStories([
-                    {
-                        id: 1,
-                        image: getDefaultImage(),
-                        title: 'Истории успеха',
-                        description: 'Питомцы, которые обрели новый дом благодаря нашему сервису',
-                        date: '2024-01-15'
-                    }
-                ]);
-                setRecentPets([
-                    { 
-                        id: 1, 
-                        name: 'Пример животного', 
-                        date: '2024-01-15', 
-                        type: 'Кошка', 
-                        district: 'Центральный', 
-                        image: getDefaultImage(),
-                        description: 'Это демонстрационная карточка животного' 
-                    }
-                ]);
+                setStories([getDefaultStory()]);
+                setRecentPets([getDefaultPet()]);
             } finally {
                 setIsLoading(false);
             }
@@ -177,14 +98,14 @@ function Main() {
 
     // Функция для получения корректного URL изображения
     const getCorrectImageUrl = (imagePath) => {
-        if (!imagePath || imagePath === 'null' || imagePath === 'undefined') {
-            return getDefaultImage();
+        // Используем утилиту imageUtils из api.js
+        if (imageUtils && typeof imageUtils.getImageUrl === 'function') {
+            return imageUtils.getImageUrl(imagePath);
         }
         
-        // Если путь уже полный URL
-        if (typeof imagePath === 'string' && 
-            (imagePath.startsWith('http://') || imagePath.startsWith('https://'))) {
-            return imagePath;
+        // Fallback: обрабатываем вручную
+        if (!imagePath || imagePath === 'null' || imagePath === 'undefined') {
+            return getDefaultImage();
         }
         
         // Если это массив фото, берем первое
@@ -193,27 +114,30 @@ function Main() {
             return getCorrectImageUrl(firstImage);
         }
         
-        // Если это строка, пробуем получить через api.getImageUrl
+        // Если это строка
         if (typeof imagePath === 'string') {
-            // Убираем начальный слеш если есть
-            const cleanPath = imagePath.startsWith('/') ? imagePath.substring(1) : imagePath;
-            
-            try {
-                // Проверяем, есть ли метод getImageUrl
-                if (api && typeof api.getImageUrl === 'function') {
-                    return api.getImageUrl(cleanPath);
-                }
-                
-                // Или пробуем сформировать URL вручную
-                if (cleanPath.includes('storage/')) {
-                    return `https://pets.сделай.site/${cleanPath}`;
-                }
-                
-                return `https://pets.сделай.site/storage/${cleanPath}`;
-            } catch (error) {
-                console.error('Ошибка получения URL изображения:', error);
-                return getDefaultImage();
+            // Если уже полный URL
+            if (imagePath.startsWith('http')) {
+                return imagePath;
             }
+            
+            // Если содержит шаблон {url}
+            if (imagePath.includes('{url}')) {
+                return imagePath.replace('{url}', 'https://pets.сделай.site');
+            }
+            
+            // Если путь начинается с /
+            if (imagePath.startsWith('/')) {
+                return `https://pets.сделай.site${imagePath}`;
+            }
+            
+            // Если похоже на имя файла
+            if (imagePath.includes('.png') || imagePath.includes('.jpg') || imagePath.includes('.jpeg')) {
+                return `https://pets.сделай.site/images/${imagePath}`;
+            }
+            
+            // Для других случаев
+            return `https://pets.сделай.site/storage/${imagePath}`;
         }
         
         return getDefaultImage();
@@ -221,9 +145,36 @@ function Main() {
 
     // Функция для получения дефолтного изображения
     const getDefaultImage = () => {
-        // Используем относительный путь к изображению в public
-        return '/images/default-pet.png';
+        // Используем несколько вариантов для надежности
+        const defaultImages = [
+            'https://pets.сделай.site/images/default-pet.jpg',
+            '/images/default-pet.png',
+            'https://placehold.co/600x400/0d6efd/ffffff?text=Pet+Photo',
+            'https://images.unsplash.com/photo-1541364983171-a8ba01e95cfc?w=600&h=400&fit=crop'
+        ];
+        
+        return defaultImages[0];
     };
+
+    // Дефолтная история для слайдера
+    const getDefaultStory = () => ({
+        id: 1,
+        image: 'https://images.unsplash.com/photo-1514888286974-6d03bde4ba4f?w=1200&h=600&fit=crop',
+        title: 'Истории успеха',
+        description: 'Питомцы, которые обрели новый дом благодаря нашему сервису',
+        date: '2024-01-15'
+    });
+
+    // Дефолтное животное
+    const getDefaultPet = () => ({
+        id: 1,
+        name: 'Пример животного',
+        date: '2024-01-15',
+        type: 'Кошка',
+        district: 'Центральный',
+        image: 'https://images.unsplash.com/photo-1514888286974-6d03bde4ba4f?w=400&h=300&fit=crop',
+        description: 'Это демонстрационная карточка животного'
+    });
 
     const handleViewPet = (petId) => {
         navigate(`/pet/${petId}`);
@@ -245,29 +196,48 @@ function Main() {
         }
         
         try {
-            await api.post('/subscription', { email: newsletterEmail });
-            setNewsletterSubmitted(true);
-            setNewsletterMessage('Вы успешно подписались на новости!');
+            // Используем petsApi для подписки
+            const response = await petsApi.subscribe?.(newsletterEmail) || 
+                             // Fallback: делаем запрос напрямую
+                             await fetch('https://pets.сделай.site/api/subscription', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({ email: newsletterEmail })
+                             });
             
-            setTimeout(() => {
-                setNewsletterSubmitted(false);
-                setNewsletterEmail('');
-                setNewsletterMessage('');
-                setNewsletterError('');
-            }, 5000);
+            if (response.ok || response.success) {
+                setNewsletterSubmitted(true);
+                setNewsletterMessage('Вы успешно подписались на новости!');
+                
+                setTimeout(() => {
+                    setNewsletterSubmitted(false);
+                    setNewsletterEmail('');
+                    setNewsletterMessage('');
+                    setNewsletterError('');
+                }, 5000);
+            } else {
+                throw new Error('Ошибка подписки');
+            }
         } catch (error) {
             console.error('Ошибка подписки:', error);
-            if (error.status === 422) {
-                setNewsletterError('Ошибка валидации email');
-            } else {
-                setNewsletterError('Ошибка при подписке. Попробуйте позже.');
-            }
+            setNewsletterError('Ошибка при подписке. Попробуйте позже.');
         }
     };
 
     const formatDate = (dateString) => {
         try {
             if (!dateString) return 'Не указана';
+            
+            // Если формат DD-MM-YYYY
+            if (dateString.includes('-') && dateString.split('-')[0].length === 2) {
+                const [day, month, year] = dateString.split('-');
+                const date = new Date(year, month - 1, day);
+                return date.toLocaleDateString('ru-RU');
+            }
+            
+            // Для других форматов
             const date = new Date(dateString);
             return date.toLocaleDateString('ru-RU', {
                 day: '2-digit',
@@ -277,6 +247,13 @@ function Main() {
         } catch (e) {
             return dateString || 'Не указана';
         }
+    };
+
+    // Функция для обработки ошибок загрузки изображений
+    const handleImageError = (e) => {
+        console.warn('Ошибка загрузки изображения:', e.target.src);
+        e.target.onerror = null; // Предотвращаем бесконечный цикл
+        e.target.src = getDefaultImage();
     };
 
     return (
@@ -316,60 +293,66 @@ function Main() {
                     </h2>
                     <p className="text-center mb-4 text-muted">Питомцы, которые уже обрели дом благодаря нашему сервису</p>
                     
-{isLoading ? (
-    <div className="text-center py-5">
-        <Spinner animation="border" variant="primary" />
-        <p className="mt-3">Загрузка историй успеха...</p>
-    </div>
-) : stories.length > 0 ? (
-    <div className="position-relative">
-        <Carousel 
-            interval={4000} 
-            pause="hover" 
-            className="shadow-lg rounded overflow-hidden"
-            indicators={false} // Убираем стандартные индикаторы если нужно
-            nextIcon={<span aria-hidden="true" className="carousel-control-next-icon custom-next-icon" />}
-            prevIcon={<span aria-hidden="true" className="carousel-control-prev-icon custom-prev-icon" />}
-        >
-            {stories.map((story, index) => (
-                <Carousel.Item key={story.id}>
-                    <div className="position-relative" style={{ height: '500px' }}>
-                        <img
-                            className="d-block w-100 h-100"
-                            src={story.image}
-                            alt={story.title}
-                            style={{ 
-                                objectFit: 'cover',
-                                filter: 'brightness(0.8)'
-                            }}
-                            onError={(e) => {
-                                e.target.src = getDefaultImage();
-                                e.target.onerror = null;
-                            }}
-                        />
-                        <div className="carousel-caption d-flex flex-column justify-content-center h-100 p-4">
-                            <div className="caption-content bg-dark bg-opacity-60 p-4 rounded mx-auto" 
-                                 style={{ maxWidth: '800px' }}>
-                                <h3 className="display-6 mb-3 text-white">{story.title}</h3>
-                                <p className="lead text-white mb-4">{story.description}</p>
-                                <p className="text-light opacity-90 mb-0">
-                                    <i className="bi bi-calendar-check me-2"></i>
-                                    Найден дом: {formatDate(story.date)}
-                                </p>
-                            </div>
+                    {isLoading ? (
+                        <div className="text-center py-5">
+                            <Spinner animation="border" variant="primary" />
+                            <p className="mt-3">Загрузка историй успеха...</p>
                         </div>
-                    </div>
-                </Carousel.Item>
-            ))}
-        </Carousel>
-    </div>
-) : (
-    <div className="text-center py-5 bg-light rounded">
-        <div className="display-1 mb-3">🐾</div>
-        <h4>Пока нет успешных историй</h4>
-        <p className="text-muted">Будьте первым, кто поможет животному найти дом!</p>
-    </div>
-)}
+                    ) : stories.length > 0 ? (
+                        <div className="position-relative">
+                            <Carousel 
+                                interval={4000} 
+                                pause="hover" 
+                                className="shadow-lg rounded overflow-hidden"
+                                indicators={true}
+                                nextIcon={
+                                    <span className="carousel-control-next-icon" aria-hidden="true">
+                                        <i className="bi bi-chevron-right fs-2 text-white"></i>
+                                    </span>
+                                }
+                                prevIcon={
+                                    <span className="carousel-control-prev-icon" aria-hidden="true">
+                                        <i className="bi bi-chevron-left fs-2 text-white"></i>
+                                    </span>
+                                }
+                            >
+                                {stories.map((story, index) => (
+                                    <Carousel.Item key={story.id || index}>
+                                        <div className="position-relative" style={{ height: '500px' }}>
+                                            <img
+                                                className="d-block w-100 h-100"
+                                                src={story.image}
+                                                alt={story.title}
+                                                style={{ 
+                                                    objectFit: 'cover',
+                                                    filter: 'brightness(0.8)'
+                                                }}
+                                                onError={handleImageError}
+                                                loading="lazy"
+                                            />
+                                            <div className="carousel-caption d-flex flex-column justify-content-center h-100 p-4">
+                                                <div className="caption-content bg-dark bg-opacity-60 p-4 rounded mx-auto" 
+                                                     style={{ maxWidth: '800px' }}>
+                                                    <h3 className="display-6 mb-3 text-white">{story.title}</h3>
+                                                    <p className="lead text-white mb-4">{story.description}</p>
+                                                    <p className="text-light opacity-90 mb-0">
+                                                        <i className="bi bi-calendar-check me-2"></i>
+                                                        Найден дом: {formatDate(story.date)}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </Carousel.Item>
+                                ))}
+                            </Carousel>
+                        </div>
+                    ) : (
+                        <div className="text-center py-5 bg-light rounded">
+                            <div className="display-1 mb-3">🐾</div>
+                            <h4>Пока нет успешных историй</h4>
+                            <p className="text-muted">Будьте первым, кто поможет животному найти дом!</p>
+                        </div>
+                    )}
                 </div>
             </section>
 
@@ -390,8 +373,8 @@ function Main() {
                         </div>
                     ) : recentPets.length > 0 ? (
                         <div className="row">
-                            {recentPets.map(pet => (
-                                <div key={pet.id} className="col-lg-4 col-md-6 mb-4">
+                            {recentPets.map((pet, index) => (
+                                <div key={pet.id || index} className="col-lg-4 col-md-6 mb-4">
                                     <Card className="h-100 shadow-sm border-0 hover-shadow transition-all">
                                         <div className="position-relative" style={{ height: '250px', overflow: 'hidden' }}>
                                             <Card.Img 
@@ -403,10 +386,8 @@ function Main() {
                                                     width: '100%', 
                                                     objectFit: 'cover' 
                                                 }}
-                                                onError={(e) => {
-                                                    e.target.src = getDefaultImage();
-                                                    e.target.onerror = null; // Предотвращаем бесконечный цикл ошибок
-                                                }}
+                                                onError={handleImageError}
+                                                loading="lazy"
                                             />
                                         </div>
                                         <Card.Body className="d-flex flex-column">
